@@ -1,0 +1,41 @@
+[
+  {
+    "role": "system",
+    "content": "你是一个强大的AI编程助手，可以通过Function Calling调用工具来帮助用户。\n\n## 当前系统环境 (系统自检)\n\n以下是程序启动时自动检测的系统信息，这些是事实，请根据这些信息调整你的命令和建议：\n\n**操作系统** (自检): windows\n**Shell** (自检): powershell\n**Python命令** (自检): python ✅ 已安装，运行Python脚本时必须使用此命令\n**Git** (自检): ✅ 可用\n\n## 命令使用指南 (根据系统自检结果)\n\n### 当前是Windows系统，请使用以下命令：\n- 列出文件: `dir` 或 `Get-ChildItem` (不要用ls)\n- 搜索文本: `findstr` (不要用grep，Windows没有grep)\n- 查看文件: `type` (不要用cat)\n- 删除文件: `del` 或 `Remove-Item` (不要用rm)\n- 复制文件: `copy` 或 `Copy-Item` (不要用cp)\n- 路径分隔符: 使用 `\\` 而不是 `/`\n- 清屏: `cls` (不要用clear)\n\n**Python脚本执行方式 (系统自检)**: 必须使用 `python script.py`，不要使用其他Python命令\n\n## 工具使用建议\n\n1. **搜索代码**: 优先使用 `search_code` 工具（跨平台，自动适配）\n2. **查看目录**: 优先使用 `list_directory` 工具（跨平台，自动适配）\n3. **Git操作**: 优先使用 `git_*` 工具，或使用run_command调用git命令\n4. **运行命令**: 使用 `run_command` 时，必须使用上述系统对应的命令，不要使用错误的命令\n\n**重要**: 上述环境信息是程序自动检测的真实系统状态，不是假设。请严格遵守这些约束。\n"
+  },
+  {
+    "role": "user",
+    "content": "嗨！"
+  },
+  {
+    "role": "assistant",
+    "content": "你好！我是你的AI编程助手。我可以帮助你：\n\n1. **查看项目结构** - 了解当前目录的内容\n2. **搜索代码** - 在项目中查找特定的代码片段\n3. **编辑文件** - 修改代码或配置文件\n4. **运行命令** - 执行各种命令（需要你的批准）\n5. **Git操作** - 管理版本控制\n6. **文件操作** - 读取、重命名、删除文件等\n\n我检测到你的系统是 **Windows**，使用 **PowerShell** 作为shell，并且已经安装了 **Python** 和 **Git**。\n\n有什么我可以帮助你的吗？比如：\n- 你想了解当前项目的情况吗？\n- 需要查看或修改某个文件？\n- 想要搜索特定的代码？\n- 需要运行某个命令？"
+  },
+  {
+    "role": "user",
+    "content": "当前目录看看？"
+  },
+  {
+    "role": "assistant",
+    "content": "我来查看一下当前目录的内容。",
+    "tool_calls": [
+      {
+        "id": "call_00_i3NZEcaoR9vJheLTEINdvorw",
+        "type": "function",
+        "function": {
+          "name": "list_directory",
+          "arguments": "{\"path\": \".\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "content": "[目录] 目录列表:\nARCHITECTURE.md (641 lines, 16.9 KB)\nREADME.md (216 lines, 6.2 KB)\nTEST_UI.md (144 lines, 2.9 KB)\nUI_FEATURES.md (299 lines, 7.2 KB)\nai_assistant.exe (47265 lines, 9.7 MB)\nchat_history.json (32 lines, 2.8 KB)\nconfig.go (14 lines, 231 B)\ngo.mod (15 lines, 365 B)\ngo.sum (18 lines, 1.4 KB)\napproval.go (206 lines, 5.4 KB)\nbackup.go (109 lines, 2.4 KB)\ndetect.go (61 lines, 1.3 KB)\nhistory.go (72 lines, 1.7 KB)\nmanager.go (167 lines, 3.3 KB)\nsystem.go (81 lines, 3.8 KB)\ncommand.go (78 lines, 2.2 KB)\ndefinitions.go (335 lines, 9.8 KB)\nexecutor.go (107 lines, 2.6 KB)\nfile.go (153 lines, 4.0 KB)\ngit.go (91 lines, 2.2 KB)\nproject.go (192 lines, 4.1 KB)\nsearch.go (96 lines, 2.5 KB)\ntheme.go (26 lines, 684 B)\nui.go (259 lines, 7.1 KB)\nmain.go (179 lines, 4.2 KB)\nmain.go.old (1792 lines, 47.9 KB)\n\n总计: 26 个文件, 9.8 MB",
+    "tool_call_id": "call_00_i3NZEcaoR9vJheLTEINdvorw"
+  },
+  {
+    "role": "assistant",
+    "content": "当前目录包含一个Go项目，看起来是一个AI助手程序。主要文件包括：\n\n**项目文件：**\n- `go.mod` 和 `go.sum` - Go模块文件\n- `main.go` - 主程序文件\n- `ai_assistant.exe` - 编译好的可执行文件\n\n**文档文件：**\n- `README.md` - 项目说明\n- `ARCHITECTURE.md` - 架构文档\n- `TEST_UI.md` 和 `UI_FEATURES.md` - UI相关文档\n\n**Go源代码文件：**\n- 多个`.go`文件，按功能模块组织（如`approval.go`, `backup.go`, `detect.go`等）\n- `main.go.old` - 旧版本的主文件\n\n**其他文件：**\n- `chat_history.json` - 聊天历史记录\n- `config.go` - 配置文件\n\n这是一个功能比较完整的Go项目，包含了UI、文件操作、Git集成、命令执行等多个模块。你想进一步了解哪个部分呢？"
+  }
+]

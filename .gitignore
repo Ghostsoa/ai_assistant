@@ -1,0 +1,35 @@
+# 二进制文件
+*.exe
+*.dll
+*.so
+*.dylib
+
+# 测试二进制文件
+*.test
+
+# 输出覆盖率文件
+*.out
+
+# 依赖验证文件
+go.sum
+
+# IDE文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 历史记录（包含敏感信息）
+chat_history.json
+
+# 旧版本备份
+*.old
+
+# 临时文件
+*.tmp
+*.log

@@ -21,12 +21,12 @@ type Message struct {
 }
 
 // Load 加载历史（限制最近N轮对话）
-func Load() []Message {
+func Load(historyFile string) []Message {
 	// 检测环境
 	env := environment.Detect()
 	systemPrompt := prompt.BuildSystemPrompt(env)
 
-	data, err := os.ReadFile(appconfig.GetHistoryFile())
+	data, err := os.ReadFile(historyFile)
 	if err != nil {
 		return []Message{{Role: "system", Content: systemPrompt}}
 	}
@@ -70,12 +70,12 @@ func Load() []Message {
 }
 
 // Save 保存历史
-func Save(messages []Message) error {
+func Save(historyFile string, messages []Message) error {
 	data, err := json.MarshalIndent(messages, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(appconfig.GetHistoryFile(), data, 0644)
+	return os.WriteFile(historyFile, data, 0644)
 }
 
 // ConvertToOpenAI 转换为OpenAI消息格式（包含 reasoning_content）

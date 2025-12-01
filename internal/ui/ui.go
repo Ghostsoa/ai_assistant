@@ -249,10 +249,10 @@ func PrintError(message string) {
 
 // PrintSuccess 打印成功信息
 func PrintSuccess(message string) {
-	colorSuccess.Printf("\n%s %s\n", SymbolSuccess, message)
+	colorSuccess.Printf("[✓] %s\n", message)
 }
 
 // PrintInfo 打印信息
 func PrintInfo(message string) {
-	colorInfo.Printf("\n%s %s\n", SymbolInfo, message)
+	colorInfo.Println(message)
 }

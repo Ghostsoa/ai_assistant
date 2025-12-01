@@ -11,11 +11,13 @@ import (
 
 	"ai_assistant/internal/approval"
 	"ai_assistant/internal/backup"
+	"ai_assistant/internal/command"
 	appconfig "ai_assistant/internal/config"
 	"ai_assistant/internal/environment"
 	"ai_assistant/internal/history"
 	"ai_assistant/internal/keyboard"
 	"ai_assistant/internal/process"
+	"ai_assistant/internal/session"
 	"ai_assistant/internal/tools"
 	"ai_assistant/internal/ui"
 
@@ -85,6 +87,22 @@ func main() {
 		showReasoning = false
 	}
 
+	// 初始化会话管理器
+	sessionManager, err := session.NewManager()
+	if err != nil {
+		fmt.Printf("[✗] 会话初始化失败: %v\n", err)
+		fmt.Println("\n按回车键退出...")
+		bufio.NewReader(os.Stdin).ReadString('\n')
+		os.Exit(1)
+	}
+
+	// 初始化命令处理器
+	cmdHandler := command.NewHandler(sessionManager)
+
+	// 显示当前会话
+	currentSession := sessionManager.GetCurrentSession()
+	fmt.Printf("[会话] %s [%s]\n", currentSession.Title, currentSession.ID)
+
 	// 初始化管理器
 	processManager := process.NewManager()
 	backupManager := backup.NewManager()
@@ -96,7 +114,8 @@ func main() {
 	client := openai.NewClientWithConfig(clientConfig)
 
 	// 加载历史
-	messages := history.Load()
+	historyFile := sessionManager.GetCurrentHistoryFile()
+	messages := history.Load(historyFile)
 	ui.PrintHistoryLoaded(len(messages) - 1)
 
 	// 主循环
@@ -109,9 +128,38 @@ func main() {
 			continue
 		}
 
+		// 处理退出命令（不需要 /）
 		if userInput == "quit" || userInput == "exit" || userInput == "q" {
 			ui.PrintGoodbye()
 			break
+		}
+
+		// 处理斜杠命令
+		if command.IsCommand(userInput) {
+			handled, err := cmdHandler.Handle(userInput)
+			if err != nil {
+				ui.PrintError(err.Error())
+				continue
+			}
+			if handled {
+				// 特殊处理退出命令
+				if strings.HasPrefix(userInput, "/exit") || strings.HasPrefix(userInput, "/quit") {
+					break
+				}
+				// 如果是切换会话或新建会话，重新加载历史
+				if strings.HasPrefix(userInput, "/switch") || strings.HasPrefix(userInput, "/new") {
+					historyFile = sessionManager.GetCurrentHistoryFile()
+					messages = history.Load(historyFile)
+					currentSession = sessionManager.GetCurrentSession()
+					fmt.Printf("\n[会话] %s [%s]\n", currentSession.Title, currentSession.ID)
+					ui.PrintHistoryLoaded(len(messages) - 1)
+				}
+				// 如果是清空会话，重新加载历史
+				if strings.HasPrefix(userInput, "/clear") {
+					messages = history.Load(historyFile)
+				}
+				continue
+			}
 		}
 
 		messages = append(messages, history.Message{Role: "user", Content: userInput})
@@ -260,7 +308,8 @@ func main() {
 			}
 
 			messages = append(messages, assistantMsg)
-			history.Save(messages)
+			history.Save(historyFile, messages)
+			sessionManager.UpdateSessionTime()
 
 			// 处理工具调用
 			if len(toolCalls) == 0 {
@@ -312,7 +361,8 @@ func main() {
 				})
 			}
 
-			history.Save(messages)
+			history.Save(historyFile, messages)
+			sessionManager.UpdateSessionTime()
 		}
 
 	interrupted:

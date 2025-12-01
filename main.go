@@ -174,13 +174,14 @@ func main() {
 		// 清除之前轮次的思维链内容（新一轮对话开始）
 		history.ClearReasoningContent(messages)
 
-		// 创建打断监听器
+		// 创建打断监听器（暂时禁用以避免输入冲突）
 		var interruptMonitor *keyboard.InterruptMonitor
-		if appconfig.GlobalConfig.EnableInterrupt {
-			interruptMonitor = keyboard.NewInterruptMonitor(appconfig.GlobalConfig.InterruptKey)
-			interruptMonitor.Start()
-			fmt.Printf("\n[提示] 输入 '%s' 并回车可打断当前操作\n", appconfig.GlobalConfig.InterruptKey)
-		}
+		// 注意：由于Go标准输入限制，打断功能暂时禁用
+		// if appconfig.GlobalConfig.EnableInterrupt {
+		// 	interruptMonitor = keyboard.NewInterruptMonitor(appconfig.GlobalConfig.InterruptKey)
+		// 	interruptMonitor.Start()
+		// 	fmt.Printf("\n[提示] 输入 '%s' 并回车可打断当前操作\n", appconfig.GlobalConfig.InterruptKey)
+		// }
 
 		// 打印 JARVIS 提示符（整轮对话只打印一次）
 		ui.PrintAIPrompt()

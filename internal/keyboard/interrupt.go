@@ -1,11 +1,7 @@
 package keyboard
 
 import (
-	"bufio"
 	"context"
-	"fmt"
-	"os"
-	"strings"
 	"sync"
 )
 
@@ -29,32 +25,17 @@ func NewInterruptMonitor(interruptKey string) *InterruptMonitor {
 }
 
 // Start 开始监听（在goroutine中运行）
+// 注意：由于 Go 标准库的限制，无法真正实现非阻塞的标准输入读取
+// 这里采用简化方案：不实际监听标准输入，而是在主循环中检查
 func (im *InterruptMonitor) Start() {
-	go func() {
-		reader := bufio.NewReader(os.Stdin)
-		for {
-			select {
-			case <-im.ctx.Done():
-				return
-			default:
-				// 尝试读取一行输入
-				input, err := reader.ReadString('\n')
-				if err != nil {
-					continue
-				}
+	// 重置打断状态
+	im.mu.Lock()
+	im.interrupted = false
+	im.mu.Unlock()
 
-				input = strings.TrimSpace(input)
-				// 检查是否是打断键
-				if input == im.interruptKey {
-					im.mu.Lock()
-					im.interrupted = true
-					im.mu.Unlock()
-					fmt.Println("\n[打断] 操作已中止")
-					return
-				}
-			}
-		}
-	}()
+	// 注意：这里不再启动 goroutine 读取标准输入
+	// 因为会与主程序的输入冲突
+	// 打断功能暂时禁用，避免输入冲突
 }
 
 // Stop 停止监听

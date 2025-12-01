@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -77,13 +76,22 @@ func Initialize() error {
 	}
 
 	// 检查配置文件是否存在
-	isFirstRun := false
 	if _, err := os.Stat(ConfigFile); os.IsNotExist(err) {
-		isFirstRun = true
-		// 首次运行，交互式创建配置
-		if err := interactiveConfig(); err != nil {
-			return fmt.Errorf("配置初始化失败: %v", err)
+		// 首次运行，引导用户创建配置
+		fmt.Println()
+		fmt.Println("╔═══════════════════════════════════════════════════════╗")
+		fmt.Println("║         欢迎使用 J.A.R.V.I.S - 超级人工智能          ║")
+		fmt.Println("╚═══════════════════════════════════════════════════════╝")
+		fmt.Println()
+		fmt.Println("检测到首次运行，请进行初始配置：")
+		fmt.Println()
+
+		if err := setupConfig(); err != nil {
+			return fmt.Errorf("配置设置失败: %v", err)
 		}
+
+		fmt.Println()
+		fmt.Printf("[✓] 配置已保存到: %s\n", ConfigFile)
 	}
 
 	// 加载配置
@@ -97,15 +105,90 @@ func Initialize() error {
 		if err := createDefaultHistory(); err != nil {
 			return fmt.Errorf("创建历史记录文件失败: %v", err)
 		}
-		if isFirstRun {
-			fmt.Printf("[初始化] 已创建历史记录文件: %s\n", HistoryFile)
-		}
 	}
 
 	return nil
 }
 
-// createDefaultConfig 创建默认配置文件
+// setupConfig 引导用户创建配置
+func setupConfig() error {
+	config := defaultConfig
+
+	// 1. API Key
+	fmt.Print("请输入您的 DeepSeek API Key: ")
+	var apiKey string
+	fmt.Scanln(&apiKey)
+	apiKey = strings.TrimSpace(apiKey)
+
+	if apiKey == "" {
+		return fmt.Errorf("API Key 不能为空")
+	}
+	config.APIKey = apiKey
+
+	// 2. 选择模型
+	fmt.Println()
+	fmt.Println("请选择模型:")
+	fmt.Println("  1. deepseek-chat (标准模型)")
+	fmt.Println("  2. deepseek-reasoner (支持思维链)")
+	fmt.Print("选择 [1/2，默认 2]: ")
+
+	var modelChoice string
+	fmt.Scanln(&modelChoice)
+	modelChoice = strings.TrimSpace(modelChoice)
+
+	if modelChoice == "1" {
+		config.Model = "deepseek-chat"
+	} else {
+		config.Model = "deepseek-reasoner"
+	}
+
+	// 3. 思维链显示模式
+	fmt.Println()
+	fmt.Println("思维链显示模式:")
+	fmt.Println("  1. 每次询问 (ask)")
+	fmt.Println("  2. 始终显示 (show)")
+	fmt.Println("  3. 始终隐藏 (hide)")
+	fmt.Print("选择 [1/2/3，默认 1]: ")
+
+	var reasoningChoice string
+	fmt.Scanln(&reasoningChoice)
+	reasoningChoice = strings.TrimSpace(reasoningChoice)
+
+	switch reasoningChoice {
+	case "2":
+		config.ReasoningMode = "show"
+	case "3":
+		config.ReasoningMode = "hide"
+	default:
+		config.ReasoningMode = "ask"
+	}
+
+	// 4. 历史记录轮数
+	fmt.Println()
+	fmt.Print("历史记录保留轮数 [默认 60，0 表示全部]: ")
+
+	var rounds string
+	fmt.Scanln(&rounds)
+	rounds = strings.TrimSpace(rounds)
+
+	if rounds != "" {
+		var r int
+		if _, err := fmt.Sscanf(rounds, "%d", &r); err == nil && r >= 0 {
+			config.MaxHistoryRounds = r
+		}
+	}
+
+	// 5. 使用默认的其他配置
+	config.BaseURL = "https://api.deepseek.com/v1"
+	config.InterruptKey = "n"
+	config.EnableInterrupt = true
+
+	// 保存配置
+	GlobalConfig = config
+	return SaveConfig()
+}
+
+// createDefaultConfig 创建默认配置文件（现已不直接使用）
 func createDefaultConfig() error {
 	data, err := json.MarshalIndent(defaultConfig, "", "  ")
 	if err != nil {
@@ -158,125 +241,4 @@ func SaveConfig() error {
 // GetHistoryFile 获取历史记录文件路径
 func GetHistoryFile() string {
 	return HistoryFile
-}
-
-// interactiveConfig 交互式配置
-func interactiveConfig() error {
-	reader := bufio.NewReader(os.Stdin)
-
-	fmt.Println()
-	fmt.Println("╔════════════════════════════════════════════════════════════╗")
-	fmt.Println("║                                                            ║")
-	fmt.Println("║           欢迎使用 J.A.R.V.I.S - 超级人工智能             ║")
-	fmt.Println("║        Just A Rather Very Intelligent System              ║")
-	fmt.Println("║                                                            ║")
-	fmt.Println("╚════════════════════════════════════════════════════════════╝")
-	fmt.Println()
-	fmt.Println("检测到这是首次运行，需要进行初始配置。")
-	fmt.Println()
-
-	// 配置项
-	config := defaultConfig
-
-	// 1. API Key (必填)
-	fmt.Println("【1/4】API 密钥配置")
-	fmt.Println("请输入您的 DeepSeek API Key：")
-	fmt.Print("> ")
-	apiKey, err := reader.ReadString('\n')
-	if err != nil {
-		return err
-	}
-	apiKey = strings.TrimSpace(apiKey)
-
-	if apiKey == "" {
-		return fmt.Errorf("API Key 不能为空")
-	}
-	config.APIKey = apiKey
-
-	// 2. API Base URL (可选)
-	fmt.Println()
-	fmt.Println("【2/4】API 地址配置")
-	fmt.Printf("请输入 API Base URL (默认: %s)：\n", defaultConfig.BaseURL)
-	fmt.Print("> ")
-	baseURL, _ := reader.ReadString('\n')
-	baseURL = strings.TrimSpace(baseURL)
-	if baseURL != "" {
-		config.BaseURL = baseURL
-	}
-
-	// 3. 模型选择
-	fmt.Println()
-	fmt.Println("【3/4】模型选择")
-	fmt.Println("可用模型：")
-	fmt.Println("  1. deepseek-chat      - 标准对话模型")
-	fmt.Println("  2. deepseek-reasoner  - 思维链模型（推荐）")
-	fmt.Printf("请选择模型 (默认: 2)：\n")
-	fmt.Print("> ")
-	modelChoice, _ := reader.ReadString('\n')
-	modelChoice = strings.TrimSpace(modelChoice)
-
-	switch modelChoice {
-	case "1":
-		config.Model = "deepseek-chat"
-	case "2", "":
-		config.Model = "deepseek-reasoner"
-	default:
-		config.Model = modelChoice // 允许自定义模型名
-	}
-
-	// 4. 思维链显示模式
-	fmt.Println()
-	fmt.Println("【4/4】思维链显示配置")
-	fmt.Println("思维链显示模式：")
-	fmt.Println("  1. ask  - 每次启动询问（推荐）")
-	fmt.Println("  2. show - 始终显示")
-	fmt.Println("  3. hide - 始终隐藏")
-	fmt.Printf("请选择模式 (默认: 1)：\n")
-	fmt.Print("> ")
-	reasoningChoice, _ := reader.ReadString('\n')
-	reasoningChoice = strings.TrimSpace(reasoningChoice)
-
-	switch reasoningChoice {
-	case "1", "":
-		config.ReasoningMode = "ask"
-	case "2":
-		config.ReasoningMode = "show"
-	case "3":
-		config.ReasoningMode = "hide"
-	default:
-		config.ReasoningMode = "ask"
-	}
-
-	// 保存配置
-	fmt.Println()
-	fmt.Println("正在保存配置...")
-
-	data, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(ConfigFile, data, 0644); err != nil {
-		return err
-	}
-
-	fmt.Println()
-	fmt.Printf("✓ 配置已保存到: %s\n", ConfigFile)
-	fmt.Println()
-	fmt.Println("═══════════════════════════════════════════════════════════")
-	fmt.Println()
-	fmt.Println("配置摘要：")
-	fmt.Printf("  - API Key    : %s...%s\n", apiKey[:10], apiKey[len(apiKey)-4:])
-	fmt.Printf("  - Base URL   : %s\n", config.BaseURL)
-	fmt.Printf("  - 模型       : %s\n", config.Model)
-	fmt.Printf("  - 思维链模式 : %s\n", config.ReasoningMode)
-	fmt.Printf("  - 历史轮数   : %d\n", config.MaxHistoryRounds)
-	fmt.Printf("  - 打断按键   : %s\n", config.InterruptKey)
-	fmt.Println()
-	fmt.Println("提示：可以随时编辑配置文件来修改这些设置")
-	fmt.Println()
-	fmt.Println("═══════════════════════════════════════════════════════════")
-	fmt.Println()
-
-	return nil
 }

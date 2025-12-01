@@ -1,9 +1,0 @@
-{
-  "api_key": "your-api-key-here",
-  "base_url": "https://api.deepseek.com/v1",
-  "model": "deepseek-reasoner",
-  "max_history_rounds": 60,
-  "interrupt_key": "n",
-  "enable_interrupt": true,
-  "reasoning_mode": "ask"
-}

@@ -61,13 +61,20 @@ func main() {
 	// 检测环境
 	env := environment.Detect()
 
-	// 打印欢迎信息
-	ui.PrintWelcome(env)
+	// 打印欢迎信息（如果不是首次运行）
+	if _, err := os.Stat(appconfig.ConfigFile); err == nil {
+		ui.PrintWelcome(env)
 
-	// 显示配置信息
-	fmt.Printf("\n[配置] 目录: %s\n", appconfig.ConfigDir)
-	fmt.Printf("[配置] 模型: %s\n", appconfig.GlobalConfig.Model)
-	fmt.Printf("[配置] 历史轮数: %d\n\n", appconfig.GlobalConfig.MaxHistoryRounds)
+		// 显示配置信息
+		fmt.Printf("\n[配置] 目录: %s\n", appconfig.ConfigDir)
+		fmt.Printf("[配置] 模型: %s\n", appconfig.GlobalConfig.Model)
+		fmt.Printf("[配置] 历史轮数: %d\n\n", appconfig.GlobalConfig.MaxHistoryRounds)
+	} else {
+		// 首次运行，简化显示
+		fmt.Println()
+		fmt.Println("[✓] 初始化完成！")
+		fmt.Println()
+	}
 
 	// 主输入reader
 	reader := bufio.NewReader(os.Stdin)

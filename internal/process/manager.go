@@ -175,7 +175,8 @@ func (pm *Manager) startPersistentShell() {
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("powershell.exe", "-NoLogo", "-NoProfile", "-Command", "-")
 	} else {
-		cmd = exec.Command("bash", "-i")
+		// 使用非交互式bash，避免终端控制权冲突
+		cmd = exec.Command("bash")
 	}
 
 	stdin, err := cmd.StdinPipe()

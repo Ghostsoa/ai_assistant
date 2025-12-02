@@ -236,17 +236,23 @@ func pushDirectorySync(task *SyncTask, sm *state.Manager) string {
 
 	// 3. 逐个同步文件（使用upload API）
 	var failed []string
-	for _, localFile := range files {
+	fmt.Printf("[DEBUG] 开始同步 %d 个文件...\n", len(files))
+
+	for i, localFile := range files {
 		// 计算相对路径
 		relPath, _ := filepath.Rel(task.LocalPath, localFile)
 		// 转换为Unix路径（远程是Linux）
 		relPath = strings.ReplaceAll(relPath, "\\", "/")
 		remoteFile := task.RemotePath + "/" + relPath
 
+		fmt.Printf("[DEBUG] [%d/%d] 同步: %s -> %s\n", i+1, len(files), localFile, remoteFile)
+
 		// 读取文件
 		content, err := os.ReadFile(localFile)
 		if err != nil {
-			failed = append(failed, localFile+": "+err.Error())
+			errMsg := fmt.Sprintf("读取失败: %v", err)
+			failed = append(failed, localFile+": "+errMsg)
+			fmt.Printf("[DEBUG] %s: %s\n", localFile, errMsg)
 			continue
 		}
 
@@ -255,7 +261,10 @@ func pushDirectorySync(task *SyncTask, sm *state.Manager) string {
 		if lastSlash > 0 {
 			remoteDir := remoteFile[:lastSlash]
 			mkdirCmd := fmt.Sprintf("mkdir -p '%s'", remoteDir)
-			sm.ExecuteOnAgent(task.Machine, mkdirCmd)
+			_, mkdirErr := sm.ExecuteOnAgent(task.Machine, mkdirCmd)
+			if mkdirErr != nil {
+				fmt.Printf("[DEBUG] 创建目录失败 %s: %v\n", remoteDir, mkdirErr)
+			}
 		}
 
 		// 使用upload API传输
@@ -269,14 +278,19 @@ func pushDirectorySync(task *SyncTask, sm *state.Manager) string {
 
 		_, err = sm.CallAgentAPI(task.Machine, "upload", data)
 		if err != nil {
-			failed = append(failed, localFile+": "+err.Error())
+			errMsg := fmt.Sprintf("上传失败: %v", err)
+			failed = append(failed, localFile+": "+errMsg)
+			fmt.Printf("[DEBUG] %s: %s\n", localFile, errMsg)
 		} else {
 			// 更新进度
 			syncTasksMutex.Lock()
 			task.Transferred += int64(len(content))
 			syncTasksMutex.Unlock()
+			fmt.Printf("[DEBUG] ✓ %s (%.2f KB)\n", localFile, float64(len(content))/1024)
 		}
 	}
+
+	fmt.Printf("[DEBUG] 同步完成，成功: %d, 失败: %d\n", len(files)-len(failed), len(failed))
 
 	if len(failed) > 0 {
 		task.Status = "failed"

@@ -3,6 +3,7 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"ai_assistant/internal/backup"
 	"ai_assistant/internal/process"
@@ -92,7 +93,10 @@ func (e *ExecutorSimplified) executeFileOperation(toolCallID string, args map[st
 func (e *ExecutorSimplified) NeedsImmediateApproval(toolCall openai.ToolCall) bool {
 	switch toolCall.Function.Name {
 	case "run_command":
-		return true
+		var args map[string]interface{}
+		json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
+		command, _ := args["command"].(string)
+		return !isReadOnlyCommand(command)
 	case "file_operation":
 		var args map[string]interface{}
 		json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
@@ -102,4 +106,52 @@ func (e *ExecutorSimplified) NeedsImmediateApproval(toolCall openai.ToolCall) bo
 	default:
 		return false
 	}
+}
+
+// isReadOnlyCommand 检查命令是否为只读命令（白名单）
+func isReadOnlyCommand(command string) bool {
+	// 提取命令的第一个单词（忽略 LC_ALL=C 等前缀）
+	cmd := strings.TrimSpace(command)
+
+	// 移除常见的环境变量前缀
+	cmd = strings.TrimPrefix(cmd, "LC_ALL=C ")
+	cmd = strings.TrimPrefix(cmd, "LANG=C ")
+	cmd = strings.TrimSpace(cmd)
+
+	// 提取第一个单词
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return false
+	}
+
+	baseCmd := parts[0]
+
+	// 白名单：只读查询命令
+	readOnlyCommands := []string{
+		"ls", "ll", "dir", // 列目录
+		"pwd", "cd", // 目录操作
+		"cat", "head", "tail", "less", "more", // 查看文件
+		"grep", "find", "locate", // 搜索
+		"echo", "printf", // 输出
+		"whoami", "id", "groups", // 用户信息
+		"hostname", "uname", // 系统信息
+		"date", "uptime", // 时间信息
+		"ps", "top", "htop", // 进程信息
+		"df", "du", // 磁盘信息
+		"free", "vmstat", // 内存信息
+		"netstat", "ss", "ip", // 网络信息
+		"systemctl status", "service status", // 服务状态
+		"git status", "git log", "git diff", "git show", // Git只读
+		"which", "whereis", "type", // 命令查找
+		"file", "stat", // 文件信息
+		"wc", "sort", "uniq", // 文本处理
+	}
+
+	for _, safeCmd := range readOnlyCommands {
+		if baseCmd == safeCmd || strings.HasPrefix(cmd, safeCmd+" ") {
+			return true
+		}
+	}
+
+	return false
 }

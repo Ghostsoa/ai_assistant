@@ -20,7 +20,9 @@ echo ""
 
 # 使用expect自动化部署
 expect << EOF
+#!/usr/bin/expect
 set timeout 30
+set port 38888
 
 # 步骤1: 上传寄生虫脚本
 puts "\[1/5\] 上传寄生虫脚本..."
@@ -62,45 +64,19 @@ send "WantedBy=multi-user.target\r"
 send "SERVICE\r"
 expect "#"
 
-# 步骤4: 配置防火墙
+# 步骤4: 配置防火墙（ufw）
 puts "\[4/5\] 配置防火墙..."
 
-# 检测防火墙类型
-send "which firewall-cmd 2>/dev/null && echo FIREWALLD || echo NONE\r"
-expect {
-    "FIREWALLD" {
-        send "firewall-cmd --permanent --add-port=7788/tcp\r"
-        expect "#"
-        send "firewall-cmd --reload\r"
-        expect "#"
-        puts "  ✓ firewalld已配置"
-    }
-    "NONE" {
-        send "which ufw 2>/dev/null && echo UFW || echo NONE\r"
-        expect {
-            "UFW" {
-                send "ufw allow 7788/tcp\r"
-                expect "#"
-                puts "  ✓ ufw已配置"
-            }
-            "NONE" {
-                send "which iptables 2>/dev/null && echo IPTABLES || echo NONE\r"
-                expect {
-                    "IPTABLES" {
-                        send "iptables -I INPUT -p tcp --dport 7788 -j ACCEPT\r"
-                        expect "#"
-                        send "service iptables save 2>/dev/null || iptables-save > /etc/iptables/rules.v4 2>/dev/null\r"
-                        expect "#"
-                        puts "  ✓ iptables已配置"
-                    }
-                    "NONE" {
-                        puts "  ! 未检测到防火墙，跳过"
-                    }
-                }
-            }
-        }
-    }
-}
+# 允许SSH和寄生虫端口
+send "ufw --force enable\r"
+expect "#"
+send "ufw allow 22/tcp\r"
+expect "#"
+send "ufw allow \$port/tcp\r"
+expect "#"
+send "ufw reload\r"
+expect "#"
+puts "  ✓ ufw已启用并配置 (22, \$port 端口已开放)"
 
 # 步骤5: 启动服务
 puts "\[5/5\] 启动服务..."
@@ -139,11 +115,11 @@ if [ $? -eq 0 ]; then
     echo "✓ 寄生成功！"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "机器ID: $ALIAS"
-    echo "地址:   $HOST:7788"
+    echo "地址:   $HOST:38888"
     echo ""
     
     # 返回机器信息（供Go程序解析）
-    echo "MACHINE_INFO:$ALIAS:$HOST:7788"
+    echo "MACHINE_INFO:$ALIAS:$HOST:38888"
 else
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

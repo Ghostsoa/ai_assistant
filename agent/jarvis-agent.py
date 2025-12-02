@@ -9,7 +9,7 @@ import threading
 import time
 import select
 
-PORT = 7788
+PORT = 38888  # 高位端口，避免冲突
 
 class PersistentShell:
     """持久Shell - 与本地ExecuteInPersistentShell能力一致"""

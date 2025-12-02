@@ -19,6 +19,7 @@ type Config struct {
 	EnableInterrupt  bool   `json:"enable_interrupt"`
 	ReasoningMode    string `json:"reasoning_mode"`   // "ask", "show", "hide"
 	BaiduSearchKey   string `json:"baidu_search_key"` // 百度搜索API Key（可选）
+	AgentAPIKey      string `json:"agent_api_key"`    // 寄生虫统一密钥
 }
 
 // 默认配置
@@ -30,6 +31,7 @@ var defaultConfig = Config{
 	InterruptKey:     "n",
 	EnableInterrupt:  true,
 	ReasoningMode:    "ask",
+	AgentAPIKey:      "JARVIS_GLOBAL_SECRET_KEY_2024", // 全局寄生虫密钥（所有机器统一）
 }
 
 // 全局配置实例

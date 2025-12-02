@@ -8,21 +8,12 @@ import json
 import threading
 import time
 import select
-import sys
 import os
-
-# JWT验证
-try:
-    import jwt
-except ImportError:
-    print("[!] PyJWT not installed. Installing...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "PyJWT"])
-    import jwt
 
 PORT = 38888  # 高位端口，避免冲突
 
-# JWT密钥（启动时从环境变量或配置文件读取）
-SECRET_KEY = os.environ.get('JARVIS_SECRET_KEY', 'DEFAULT_INSECURE_KEY')
+# 全局API Key（硬编码，所有寄生虫统一）
+API_KEY = os.environ.get('JARVIS_API_KEY', 'JARVIS_GLOBAL_SECRET_KEY_2024')
 
 class PersistentShell:
     """持久Shell - 与本地ExecuteInPersistentShell能力一致"""
@@ -87,34 +78,20 @@ class PersistentShell:
 # 全局Shell实例
 shell = PersistentShell()
 
-def verify_token(token):
-    """验证JWT token"""
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-        # 检查过期时间
-        if payload.get('exp', 0) < time.time():
-            return False, "Token expired"
-        return True, payload
-    except jwt.ExpiredSignatureError:
-        return False, "Token expired"
-    except jwt.InvalidTokenError as e:
-        return False, f"Invalid token: {str(e)}"
-
 def handle_client(client_socket):
-    """处理JARVIS的命令请求（带JWT认证）"""
+    """处理JARVIS的命令请求（API Key认证）"""
     try:
         # 接收请求
         data = client_socket.recv(4096).decode('utf-8')
         request = json.loads(data)
         
-        # 验证JWT token
-        token = request.get('token')
-        if not token:
-            raise ValueError("Missing token")
+        # 验证API Key（简单字符串比对）
+        api_key = request.get('api_key')
+        if not api_key:
+            raise ValueError("Missing API key")
         
-        valid, result = verify_token(token)
-        if not valid:
-            raise ValueError(f"Authentication failed: {result}")
+        if api_key != API_KEY:
+            raise ValueError("Invalid API key")
         
         # 执行命令
         command = request['command']

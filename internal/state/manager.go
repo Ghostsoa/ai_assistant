@@ -14,8 +14,6 @@ import (
 	"time"
 
 	appconfig "ai_assistant/internal/config"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
 // Machine 控制机信息
@@ -213,27 +211,11 @@ func (m *Manager) GetTerminalSnapshot(lines int) string {
 	return result
 }
 
-// generateSecretKey 生成随机密钥
-func generateSecretKey() string {
+// generateAPIKey 生成随机API Key（64位十六进制）
+func generateAPIKey() string {
 	bytes := make([]byte, 32)
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)
-}
-
-// generateJWT 生成JWT token
-func (m *Manager) generateJWT(machineID string) (string, error) {
-	machine := m.state.Machines[machineID]
-	if machine == nil {
-		return "", fmt.Errorf("机器不存在")
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"machine_id": machineID,
-		"iat":        time.Now().Unix(),
-		"exp":        time.Now().Add(24 * time.Hour).Unix(), // 24小时过期
-	})
-
-	return token.SignedString([]byte(machine.SecretKey))
 }
 
 // ExecuteOnAgent 在寄生虫上执行命令
@@ -246,12 +228,6 @@ func (m *Manager) ExecuteOnAgent(machineID, command string) (string, error) {
 		return "", fmt.Errorf("机器不存在: %s", machineID)
 	}
 
-	// 生成JWT token
-	token, err := m.generateJWT(machineID)
-	if err != nil {
-		return "", fmt.Errorf("生成token失败: %v", err)
-	}
-
 	// 连接寄生虫
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", machine.Host, machine.Port), 5*time.Second)
 	if err != nil {
@@ -259,10 +235,10 @@ func (m *Manager) ExecuteOnAgent(machineID, command string) (string, error) {
 	}
 	defer conn.Close()
 
-	// 发送命令（带token）
+	// 发送命令（带全局API Key）
 	request := map[string]string{
 		"command": command,
-		"token":   token,
+		"api_key": appconfig.GlobalConfig.AgentAPIKey,
 	}
 	if err := json.NewEncoder(conn).Encode(request); err != nil {
 		return "", err
@@ -294,11 +270,11 @@ func (m *Manager) GetState() *State {
 
 // InfectServer 寄生目标服务器
 func (m *Manager) InfectServer(host, user, password, alias string) error {
-	// 生成密钥
-	secretKey := generateSecretKey()
+	// 使用全局API Key
+	apiKey := appconfig.GlobalConfig.AgentAPIKey
 
-	// 调用infect.sh脚本，传递密钥
-	cmd := exec.Command("bash", "./scripts/infect.sh", host, user, password, alias, secretKey)
+	// 调用infect.sh脚本，传递API Key
+	cmd := exec.Command("bash", "./scripts/infect.sh", host, user, password, alias, apiKey)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -317,7 +293,7 @@ func (m *Manager) InfectServer(host, user, password, alias string) error {
 				var machinePort int
 				fmt.Sscanf(parts[3], "%d", &machinePort)
 
-				// 添加到控制机列表（包含密钥）
+				// 添加到控制机列表（不保存密钥，使用全局密钥）
 				m.mutex.Lock()
 				m.state.Machines[machineID] = &Machine{
 					ID:          machineID,
@@ -325,8 +301,8 @@ func (m *Manager) InfectServer(host, user, password, alias string) error {
 					Port:        machinePort,
 					Type:        "agent",
 					Description: fmt.Sprintf("远程服务器 (%s)", host),
-					SecretKey:   secretKey,
-					CurrentDir:  "/root",
+					// SecretKey 不再保存，统一使用全局配置
+					CurrentDir: "/root",
 				}
 				m.mutex.Unlock()
 

@@ -6,7 +6,7 @@ HOST=$1
 USER=$2
 PASS=$3
 ALIAS=${4:-"server-$(date +%s)"}
-SECRET_KEY=${5:-$(openssl rand -hex 32)}
+API_KEY=${5:-$(openssl rand -hex 32)}
 
 if [ -z "$HOST" ] || [ -z "$USER" ] || [ -z "$PASS" ]; then
     echo "用法: $0 <host> <user> <password> [alias] [secret_key]"
@@ -71,11 +71,11 @@ send "WantedBy=multi-user.target\r"
 send "SERVICE\r"
 expect "#"
 
-# 步骤4: 配置JWT密钥
-puts "\[4/6\] 配置JWT密钥..."
-send "echo 'export JARVIS_SECRET_KEY=\"$SECRET_KEY\"' >> /etc/environment\r"
+# 步骤4: 配置API Key
+puts "\[4/6\] 配置API Key..."
+send "echo 'export JARVIS_API_KEY=\"$API_KEY\"' >> /etc/environment\r"
 expect "#"
-puts "  ✓ JWT密钥已配置"
+puts "  ✓ API Key已配置"
 
 # 步骤5: 配置防火墙（ufw）
 puts "\[5/6\] 配置防火墙..."

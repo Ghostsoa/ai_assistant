@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"path/filepath"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -199,134 +199,54 @@ func pushFileSync(task *SyncTask, sm *state.Manager) string {
 		float64(fileSize)/(1024*1024), elapsed, speed)
 }
 
-// pushDirectorySync 同步推送目录（递归同步）
+// pushDirectorySync 同步推送目录（打包传输方案 - 使用tar_upload接口）
 func pushDirectorySync(task *SyncTask, sm *state.Manager) string {
-	// 1. 创建远程目录
-	mkdirCmd := fmt.Sprintf("mkdir -p '%s'", task.RemotePath)
-	_, err := sm.ExecuteOnAgent(task.Machine, mkdirCmd)
+	fmt.Printf("[DEBUG] 使用流式tar传输方案同步目录...\n")
+
+	// 1. 本地打包到内存（使用管道，避免临时文件）
+	fmt.Printf("[DEBUG] 正在打包: %s\n", task.LocalPath)
+	tarCmd := fmt.Sprintf("tar czf - -C '%s' .", task.LocalPath)
+	output, err := exec.Command("bash", "-c", tarCmd).Output()
+	if err != nil {
+		task.Status = "failed"
+		task.Error = fmt.Sprintf("打包失败: %v", err)
+		return fmt.Sprintf("[✗] 打包失败: %v", err)
+	}
+
+	task.TotalSize = int64(len(output))
+	fmt.Printf("[DEBUG] 压缩包大小: %.2f MB\n", float64(task.TotalSize)/(1024*1024))
+
+	// 2. Base64编码
+	encoded := base64.StdEncoding.EncodeToString(output)
+
+	// 3. 使用tar_upload接口一次性传输并解压
+	fmt.Printf("[DEBUG] 开始传输并远程解压...\n")
+	data := map[string]interface{}{
+		"path":    task.RemotePath,
+		"content": encoded,
+	}
+
+	resp, err := sm.CallAgentAPI(task.Machine, "tar_upload", data)
 	if err != nil {
 		task.Status = "failed"
 		task.Error = err.Error()
-		return fmt.Sprintf("[✗] 创建远程目录失败: %v", err)
+		return fmt.Sprintf("[✗] 传输失败: %v", err)
 	}
 
-	// 2. 递归遍历本地目录
-	var files []string
-	var totalSize int64
-
-	err = filepath.Walk(task.LocalPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			files = append(files, path)
-			totalSize += info.Size()
-		}
-		return nil
-	})
-
-	if err != nil {
-		task.Status = "failed"
-		task.Error = err.Error()
-		return fmt.Sprintf("[✗] 遍历目录失败: %v", err)
-	}
-
-	// 更新总大小
-	task.TotalSize = totalSize
-
-	// 3. 并发同步文件（使用upload API）
-	const maxConcurrency = 10 // 最大并发数
-	var failed []string
-	var failedMutex sync.Mutex
-	var wg sync.WaitGroup
-
-	fmt.Printf("[DEBUG] 开始同步 %d 个文件（并发数: %d）...\n", len(files), maxConcurrency)
-
-	// 使用channel控制并发数
-	semaphore := make(chan struct{}, maxConcurrency)
-
-	for i, localFile := range files {
-		wg.Add(1)
-
-		go func(idx int, file string) {
-			defer wg.Done()
-
-			// 获取信号量
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-
-			// 计算相对路径
-			relPath, _ := filepath.Rel(task.LocalPath, file)
-			// 转换为Unix路径（远程是Linux）
-			relPath = strings.ReplaceAll(relPath, "\\", "/")
-			remoteFile := task.RemotePath + "/" + relPath
-
-			fmt.Printf("[DEBUG] [%d/%d] 同步: %s -> %s\n", idx+1, len(files), file, remoteFile)
-
-			// 读取文件
-			content, err := os.ReadFile(file)
-			if err != nil {
-				errMsg := fmt.Sprintf("读取失败: %v", err)
-				failedMutex.Lock()
-				failed = append(failed, file+": "+errMsg)
-				failedMutex.Unlock()
-				fmt.Printf("[DEBUG] %s: %s\n", file, errMsg)
-				return
-			}
-
-			// 创建远程子目录（使用Unix路径）
-			lastSlash := strings.LastIndex(remoteFile, "/")
-			if lastSlash > 0 {
-				remoteDir := remoteFile[:lastSlash]
-				mkdirCmd := fmt.Sprintf("mkdir -p '%s'", remoteDir)
-				_, mkdirErr := sm.ExecuteOnAgent(task.Machine, mkdirCmd)
-				if mkdirErr != nil {
-					fmt.Printf("[DEBUG] 创建目录失败 %s: %v\n", remoteDir, mkdirErr)
-				}
-			}
-
-			// 使用upload API传输
-			encoded := base64.StdEncoding.EncodeToString(content)
-			data := map[string]interface{}{
-				"path":       remoteFile,
-				"content":    encoded,
-				"offset":     0,
-				"total_size": len(content),
-			}
-
-			_, err = sm.CallAgentAPI(task.Machine, "upload", data)
-			if err != nil {
-				errMsg := fmt.Sprintf("上传失败: %v", err)
-				failedMutex.Lock()
-				failed = append(failed, file+": "+errMsg)
-				failedMutex.Unlock()
-				fmt.Printf("[DEBUG] %s: %s\n", file, errMsg)
-			} else {
-				// 更新进度
-				syncTasksMutex.Lock()
-				task.Transferred += int64(len(content))
-				syncTasksMutex.Unlock()
-				fmt.Printf("[DEBUG] ✓ %s (%.2f KB)\n", file, float64(len(content))/1024)
-			}
-		}(i, localFile)
-	}
-
-	// 等待所有上传完成
-	wg.Wait()
-
-	fmt.Printf("[DEBUG] 同步完成，成功: %d, 失败: %d\n", len(files)-len(failed), len(failed))
-
-	if len(failed) > 0 {
-		task.Status = "failed"
-		task.Error = fmt.Sprintf("%d 个文件失败", len(failed))
-		return fmt.Sprintf("[✗] 目录同步部分失败:\n%s", strings.Join(failed, "\n"))
-	}
+	// 更新进度
+	syncTasksMutex.Lock()
+	task.Transferred = task.TotalSize
+	syncTasksMutex.Unlock()
 
 	task.Status = "completed"
 	elapsed := time.Since(task.StartTime).Seconds()
+	speed := float64(task.TotalSize) / elapsed / 1024 // KB/s
 
-	return fmt.Sprintf("[✓] 目录已同步: %s -> %s:%s\n文件数: %d\n耗时: %.1f秒",
-		task.LocalPath, task.Machine, task.RemotePath, len(files), elapsed)
+	fmt.Printf("[DEBUG] 同步完成！实际大小: %.2f MB\n", float64(resp["size"].(float64))/(1024*1024))
+
+	return fmt.Sprintf("[✓] 目录已同步: %s -> %s:%s\n压缩包大小: %.2f MB\n耗时: %.1f秒\n速度: %.2f KB/s",
+		task.LocalPath, task.Machine, task.RemotePath,
+		float64(task.TotalSize)/(1024*1024), elapsed, speed)
 }
 
 // ExecuteSyncStatus 查询同步任务状态
@@ -399,101 +319,64 @@ func ExecuteSyncStatus(args map[string]interface{}) string {
 	)
 }
 
-// pullDirectorySync 同步拉取目录（递归同步）
+// pullDirectorySync 同步拉取目录（打包传输方案 - 使用tar_download接口）
 func pullDirectorySync(task *SyncTask, sm *state.Manager) string {
-	// 1. 创建本地目录
-	err := os.MkdirAll(task.LocalPath, 0755)
+	fmt.Printf("[DEBUG] 使用流式tar传输方案拉取目录...\n")
+
+	// 1. 使用tar_download接口远程打包并下载
+	fmt.Printf("[DEBUG] 远程打包并下载: %s\n", task.RemotePath)
+	data := map[string]interface{}{
+		"path": task.RemotePath,
+	}
+
+	resp, err := sm.CallAgentAPI(task.Machine, "tar_download", data)
 	if err != nil {
 		task.Status = "failed"
 		task.Error = err.Error()
-		return fmt.Sprintf("[✗] 创建本地目录失败: %v", err)
+		return fmt.Sprintf("[✗] 下载失败: %v", err)
 	}
 
-	// 2. 获取远程目录文件列表
-	listCmd := fmt.Sprintf("find '%s' -type f 2>/dev/null", task.RemotePath)
-	output, err := sm.ExecuteOnAgent(task.Machine, listCmd)
+	// 2. 解码压缩包
+	contentB64, ok := resp["content"].(string)
+	if !ok {
+		task.Status = "failed"
+		return "[✗] 响应格式错误"
+	}
+
+	archiveContent, err := base64.StdEncoding.DecodeString(contentB64)
 	if err != nil {
 		task.Status = "failed"
-		task.Error = err.Error()
-		return fmt.Sprintf("[✗] 列出远程文件失败: %v", err)
+		return fmt.Sprintf("[✗] 解码失败: %v", err)
 	}
 
-	files := strings.Split(strings.TrimSpace(output), "\n")
-	if len(files) == 0 || files[0] == "" {
-		return "[i] 远程目录为空"
-	}
+	task.TotalSize = int64(len(archiveContent))
+	fmt.Printf("[DEBUG] 压缩包大小: %.2f MB\n", float64(task.TotalSize)/(1024*1024))
 
-	// 3. 逐个拉取文件（使用download API）
-	var failed []string
-	var totalSize int64
+	// 3. 本地解压（使用管道，避免临时文件）
+	fmt.Printf("[DEBUG] 正在本地解压...\n")
+	os.MkdirAll(task.LocalPath, 0755)
 
-	for _, remoteFile := range files {
-		remoteFile = strings.TrimSpace(remoteFile)
-		if remoteFile == "" {
-			continue
-		}
-
-		// 计算相对路径和本地路径
-		relPath := strings.TrimPrefix(remoteFile, task.RemotePath)
-		relPath = strings.TrimPrefix(relPath, "/")
-		localFile := filepath.Join(task.LocalPath, relPath)
-
-		// 创建本地子目录
-		localDir := filepath.Dir(localFile)
-		os.MkdirAll(localDir, 0755)
-
-		// 使用download API下载
-		data := map[string]interface{}{
-			"path":       remoteFile,
-			"offset":     0,
-			"chunk_size": 1024 * 1024,
-		}
-
-		resp, err := sm.CallAgentAPI(task.Machine, "download", data)
-		if err != nil {
-			failed = append(failed, remoteFile+": "+err.Error())
-			continue
-		}
-
-		// 解码内容
-		contentB64, ok := resp["content"].(string)
-		if !ok {
-			failed = append(failed, remoteFile+": 响应格式错误")
-			continue
-		}
-
-		decoded, err := base64.StdEncoding.DecodeString(contentB64)
-		if err != nil {
-			failed = append(failed, remoteFile+": "+err.Error())
-			continue
-		}
-
-		// 写入本地文件
-		err = os.WriteFile(localFile, decoded, 0644)
-		if err != nil {
-			failed = append(failed, remoteFile+": "+err.Error())
-		} else {
-			totalSize += int64(len(decoded))
-			// 更新进度
-			syncTasksMutex.Lock()
-			task.Transferred += int64(len(decoded))
-			syncTasksMutex.Unlock()
-		}
-	}
-
-	task.TotalSize = totalSize
-
-	if len(failed) > 0 {
+	// echo content | tar xzf - -C target_path
+	proc := exec.Command("tar", "xzf", "-", "-C", task.LocalPath)
+	proc.Stdin = strings.NewReader(string(archiveContent))
+	output, err := proc.CombinedOutput()
+	if err != nil {
 		task.Status = "failed"
-		task.Error = fmt.Sprintf("%d 个文件失败", len(failed))
-		return fmt.Sprintf("[✗] 目录同步部分失败:\n%s", strings.Join(failed, "\n"))
+		return fmt.Sprintf("[✗] 本地解压失败: %v\n输出: %s", err, string(output))
 	}
+
+	// 更新进度
+	syncTasksMutex.Lock()
+	task.Transferred = task.TotalSize
+	syncTasksMutex.Unlock()
 
 	task.Status = "completed"
 	elapsed := time.Since(task.StartTime).Seconds()
+	speed := float64(task.TotalSize) / elapsed / 1024 // KB/s
 
-	return fmt.Sprintf("[✓] 目录已拉取: %s:%s -> %s\n文件数: %d\n耗时: %.1f秒",
-		task.Machine, task.RemotePath, task.LocalPath, len(files), elapsed)
+	return fmt.Sprintf("[✓] 目录已拉取: %s:%s -> %s\n压缩包大小: %.2f MB\n耗时: %.1f秒\n速度: %.2f KB/s",
+		task.Machine, task.RemotePath, task.LocalPath,
+		float64(task.TotalSize)/(1024*1024), elapsed, speed)
 }
 
 // pullFileFromRemote 拉取远程文件/目录到本地（智能后台）

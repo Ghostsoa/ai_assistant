@@ -202,6 +202,71 @@ def handle_list_dir(data):
         'items': items
     }
 
+def handle_tar_upload(data):
+    """接收tar.gz压缩包并直接解压（流式处理，无临时文件）"""
+    import subprocess
+    import tempfile
+    
+    target_path = data['path']
+    content_b64 = data['content']
+    
+    # Base64解码
+    content = base64.b64decode(content_b64)
+    
+    # 创建目标目录
+    os.makedirs(target_path, exist_ok=True)
+    
+    # 使用管道直接解压，避免临时文件
+    # echo content | tar xzf - -C target_path
+    proc = subprocess.Popen(
+        ['tar', 'xzf', '-', '-C', target_path],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    
+    stdout, stderr = proc.communicate(input=content)
+    
+    if proc.returncode != 0:
+        raise Exception(f"解压失败: {stderr.decode('utf-8')}")
+    
+    return {
+        'success': True,
+        'path': target_path,
+        'size': len(content)
+    }
+
+def handle_tar_download(data):
+    """打包目录并返回tar.gz（流式处理，无临时文件）"""
+    import subprocess
+    
+    source_path = data['path']
+    
+    if not os.path.exists(source_path):
+        raise FileNotFoundError(f"Path not found: {source_path}")
+    
+    # 使用管道直接打包，避免临时文件
+    # tar czf - -C source_path .
+    proc = subprocess.Popen(
+        ['tar', 'czf', '-', '-C', source_path, '.'],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    
+    stdout, stderr = proc.communicate()
+    
+    if proc.returncode != 0:
+        raise Exception(f"打包失败: {stderr.decode('utf-8')}")
+    
+    # Base64编码返回
+    content_b64 = base64.b64encode(stdout).decode('utf-8')
+    
+    return {
+        'success': True,
+        'content': content_b64,
+        'size': len(stdout)
+    }
+
 def handle_client(client_socket):
     """处理JARVIS的请求（支持多种操作）"""
     try:
@@ -237,6 +302,14 @@ def handle_client(client_socket):
             
         elif action == 'list_dir':
             response = handle_list_dir(request['data'])
+            
+        elif action == 'tar_upload':
+            # 直接接收tar流并解压
+            response = handle_tar_upload(request['data'])
+            
+        elif action == 'tar_download':
+            # 直接打包并发送tar流
+            response = handle_tar_download(request['data'])
             
         else:
             raise ValueError(f"Unknown action: {action}")

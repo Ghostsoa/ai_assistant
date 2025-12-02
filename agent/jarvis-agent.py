@@ -268,10 +268,27 @@ def handle_tar_download(data):
     }
 
 def handle_client(client_socket):
-    """处理JARVIS的请求（支持多种操作）"""
+    """处理JARVIS的请求（支持大数据）"""
     try:
-        # 接收请求
-        data = client_socket.recv(65536).decode('utf-8')  # 增大缓冲区
+        # 设置接收超时（3秒内没新数据则认为接收完毕）
+        client_socket.settimeout(3.0)
+        
+        # 接收请求（支持大数据）
+        chunks = []
+        while True:
+            try:
+                chunk = client_socket.recv(1024 * 1024)  # 1MB缓冲区
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            except socket.timeout:
+                # 超时说明数据接收完毕
+                break
+        
+        if not chunks:
+            raise ValueError("No data received")
+        
+        data = b''.join(chunks).decode('utf-8')
         request = json.loads(data)
         
         # 验证API Key
@@ -314,15 +331,15 @@ def handle_client(client_socket):
         else:
             raise ValueError(f"Unknown action: {action}")
         
-        # 返回结果
-        client_socket.send(json.dumps(response).encode('utf-8'))
+        # 返回结果（使用sendall确保大数据完整发送）
+        client_socket.sendall(json.dumps(response).encode('utf-8'))
         
     except Exception as e:
         error_response = {
             'error': str(e),
             'success': False
         }
-        client_socket.send(json.dumps(error_response).encode('utf-8'))
+        client_socket.sendall(json.dumps(error_response).encode('utf-8'))
     finally:
         client_socket.close()
 

@@ -134,11 +134,9 @@ func (m *Manager) load() {
 	}
 }
 
-// Save 保存状态
+// Save 保存状态（调用者需要确保已加锁或数据一致性）
 func (m *Manager) Save() error {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-
+	// 不加锁，由调用者负责
 	data, err := json.MarshalIndent(m.state, "", "  ")
 	if err != nil {
 		return err
@@ -181,22 +179,20 @@ func (m *Manager) GetMachine(machineID string) *Machine {
 // OpenTerminalSlot 打开终端槽位
 func (m *Manager) OpenTerminalSlot(slotID, machineID string) error {
 	m.mutex.Lock()
+	defer m.mutex.Unlock()
 
 	slot := m.state.TerminalSlots[slotID]
 	if slot == nil {
-		m.mutex.Unlock()
 		return fmt.Errorf("槽位不存在: %s", slotID)
 	}
 
 	if slot.Active {
-		m.mutex.Unlock()
 		return fmt.Errorf("槽位已激活，当前机器: %s", slot.MachineID)
 	}
 
 	slot.MachineID = machineID
 	slot.Active = true
 	slot.Buffer = []string{}
-	m.mutex.Unlock()
 
 	return m.Save()
 }
@@ -204,17 +200,16 @@ func (m *Manager) OpenTerminalSlot(slotID, machineID string) error {
 // CloseTerminalSlot 关闭终端槽位
 func (m *Manager) CloseTerminalSlot(slotID string) error {
 	m.mutex.Lock()
+	defer m.mutex.Unlock()
 
 	slot := m.state.TerminalSlots[slotID]
 	if slot == nil {
-		m.mutex.Unlock()
 		return fmt.Errorf("槽位不存在: %s", slotID)
 	}
 
 	slot.Active = false
 	slot.MachineID = ""
 	slot.Buffer = []string{}
-	m.mutex.Unlock()
 
 	return m.Save()
 }
@@ -222,17 +217,16 @@ func (m *Manager) CloseTerminalSlot(slotID string) error {
 // SwitchTerminalSlot 切换槽位到另一个机器
 func (m *Manager) SwitchTerminalSlot(slotID, machineID string) error {
 	m.mutex.Lock()
+	defer m.mutex.Unlock()
 
 	slot := m.state.TerminalSlots[slotID]
 	if slot == nil {
-		m.mutex.Unlock()
 		return fmt.Errorf("槽位不存在: %s", slotID)
 	}
 
 	slot.MachineID = machineID
 	slot.Active = true
 	slot.Buffer = []string{} // 清空旧buffer
-	m.mutex.Unlock()
 
 	return m.Save()
 }

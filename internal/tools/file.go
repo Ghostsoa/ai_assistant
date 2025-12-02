@@ -2,6 +2,7 @@ package tools
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -12,17 +13,47 @@ import (
 	"strings"
 
 	"ai_assistant/internal/backup"
+	"ai_assistant/internal/state"
 )
 
-// ExecuteReadFile 读取文件
-func ExecuteReadFile(args map[string]interface{}) string {
+// ExecuteReadFile 读取文件（支持远程）
+func ExecuteReadFile(args map[string]interface{}, sm *state.Manager) string {
 	file := args["file"].(string)
+	currentMachine := sm.GetCurrentMachineID()
 
-	// 读取完整文件
+	// 远程机器：通过寄生虫读取
+	if currentMachine != "local" {
+		// 使用base64编码传输，避免特殊字符问题
+		cmd := fmt.Sprintf("cat '%s' | base64", file)
+		output, err := sm.ExecuteOnAgent(currentMachine, cmd)
+		if err != nil {
+			return fmt.Sprintf("[✗] 读取失败: %v", err)
+		}
+
+		// 解码base64
+		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(output))
+		if err != nil {
+			// 如果解码失败，尝试直接读取
+			output, err = sm.ExecuteOnAgent(currentMachine, fmt.Sprintf("cat '%s'", file))
+			if err != nil {
+				return fmt.Sprintf("[✗] 读取失败: %v", err)
+			}
+			content := []byte(output)
+			return processFileContent(file, content, args)
+		}
+		return processFileContent(file, decoded, args)
+	}
+
+	// 本地机器：直接读取
 	content, err := os.ReadFile(file)
 	if err != nil {
 		return fmt.Sprintf("[✗] 读取失败: %v", err)
 	}
+	return processFileContent(file, content, args)
+}
+
+// processFileContent 处理文件内容（提取公共逻辑）
+func processFileContent(file string, content []byte, args map[string]interface{}) string {
 
 	// 分割成行
 	lines := strings.Split(string(content), "\n")

@@ -38,7 +38,7 @@ func (e *Executor) Execute(toolCall openai.ToolCall) string {
 		return ExecuteWebSearch(args)
 	// 文件操作
 	case "read_file":
-		return ExecuteReadFile(args)
+		return ExecuteReadFile(args, e.StateManager)
 	case "edit_file":
 		return ExecuteEditFile(toolCall.ID, args, e.BackupManager)
 	case "rename_symbol":

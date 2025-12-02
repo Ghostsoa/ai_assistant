@@ -60,7 +60,7 @@ class PersistentShell:
         
         # 收集输出，直到看到marker
         output = []
-        max_wait = 50  # 最多等待5秒
+        max_wait = 300  # 最多等待30秒（支持go build等耗时命令）
         
         for _ in range(max_wait):
             time.sleep(0.1)
@@ -305,7 +305,12 @@ def handle_client(client_socket):
             command = request.get('data', {}).get('command') or request.get('command')
             if not command:
                 raise ValueError("Missing 'command' parameter")
+            
+            print(f"[DEBUG] 执行命令: {command}")  # 调试日志
             output = shell.execute(command)
+            print(f"[DEBUG] 命令输出长度: {len(output)}")  # 调试日志
+            print(f"[DEBUG] 命令输出前100字符: {output[:100]}")  # 调试日志
+            
             response = {'output': output, 'success': True}
             
         elif action == 'upload':

@@ -455,10 +455,23 @@ func (m *Manager) ExecuteOnAgent(machineID, command string) (string, error) {
 		return "", err
 	}
 
+	// 调试日志
+	fmt.Printf("[DEBUG] resp keys: %v\n", getKeys(resp))
 	if output, ok := resp["output"].(string); ok {
+		fmt.Printf("[DEBUG] output length: %d\n", len(output))
 		return output, nil
 	}
+	fmt.Printf("[DEBUG] No output field in response!\n")
 	return "", nil
+}
+
+// getKeys 获取map的所有key（用于调试）
+func getKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // UploadFile 上传文件到远程（自动分块）

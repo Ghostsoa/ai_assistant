@@ -5,6 +5,29 @@ import "github.com/sashabaranov/go-openai"
 // GetTools 返回所有工具定义
 func GetTools() []openai.Tool {
 	return []openai.Tool{
+		// 网络搜索工具
+		{
+			Type: openai.ToolTypeFunction,
+			Function: &openai.FunctionDefinition{
+				Name:        "web_search",
+				Description: "在互联网上搜索信息。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"query": map[string]interface{}{
+							"type":        "string",
+							"description": "搜索关键词或问题",
+						},
+						"max_results": map[string]interface{}{
+							"type":        "integer",
+							"description": "最多返回结果数，默认5",
+							"default":     5,
+						},
+					},
+					"required": []string{"query"},
+				},
+			},
+		},
 		// 文件操作工具
 		{
 			Type: openai.ToolTypeFunction,

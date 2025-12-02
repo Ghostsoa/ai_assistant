@@ -30,6 +30,9 @@ func (e *Executor) Execute(toolCall openai.ToolCall) string {
 	json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
 
 	switch toolCall.Function.Name {
+	// 网络工具
+	case "web_search":
+		return ExecuteWebSearch(args)
 	// 文件操作
 	case "read_file":
 		return ExecuteReadFile(args)

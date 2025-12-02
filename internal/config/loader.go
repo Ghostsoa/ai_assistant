@@ -17,7 +17,8 @@ type Config struct {
 	MaxHistoryRounds int    `json:"max_history_rounds"`
 	InterruptKey     string `json:"interrupt_key"`
 	EnableInterrupt  bool   `json:"enable_interrupt"`
-	ReasoningMode    string `json:"reasoning_mode"` // "ask", "show", "hide"
+	ReasoningMode    string `json:"reasoning_mode"`   // "ask", "show", "hide"
+	BaiduSearchKey   string `json:"baidu_search_key"` // 百度搜索API Key（可选）
 }
 
 // 默认配置
@@ -178,7 +179,17 @@ func setupConfig() error {
 		}
 	}
 
-	// 5. 使用默认的其他配置
+	// 5. 百度搜索API Key（可选）
+	fmt.Println()
+	fmt.Println("百度搜索API Key（可选，用于联网搜索功能）: ")
+	fmt.Println("  留空则禁用搜索功能，直接回车跳过")
+	fmt.Print("请输入: ")
+
+	var searchKey string
+	fmt.Scanln(&searchKey)
+	config.BaiduSearchKey = strings.TrimSpace(searchKey)
+
+	// 6. 使用默认的其他配置
 	config.BaseURL = "https://api.deepseek.com/v1"
 	config.InterruptKey = "n"
 	config.EnableInterrupt = true

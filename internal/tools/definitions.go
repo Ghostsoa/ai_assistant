@@ -33,13 +33,21 @@ func GetTools() []openai.Tool {
 			Type: openai.ToolTypeFunction,
 			Function: &openai.FunctionDefinition{
 				Name:        "read_file",
-				Description: "读取文件内容（查询操作，无需用户批准）",
+				Description: "读取文件内容。如果文件超过1000行，将返回文件摘要和行数统计，需要使用start_line和end_line参数按范围读取。",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"file": map[string]interface{}{
 							"type":        "string",
 							"description": "文件路径",
+						},
+						"start_line": map[string]interface{}{
+							"type":        "integer",
+							"description": "起始行号（可选，用于读取大文件的指定范围）",
+						},
+						"end_line": map[string]interface{}{
+							"type":        "integer",
+							"description": "结束行号（可选，用于读取大文件的指定范围）",
 						},
 					},
 					"required": []string{"file"},

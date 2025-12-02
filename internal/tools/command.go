@@ -3,6 +3,7 @@ package tools
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	"ai_assistant/internal/process"
@@ -23,10 +24,15 @@ func ExecuteRunCommand(args map[string]interface{}, pm *process.Manager) string 
 
 	cmd := exec.Command("bash", "-c", command)
 	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+
+	// 截取过长的输出
+	outputStr = truncateOutput(outputStr)
+
 	if err != nil {
-		return fmt.Sprintf("%s\n[返回码: %d]", string(output), cmd.ProcessState.ExitCode())
+		return fmt.Sprintf("%s\n[返回码: %d]", outputStr, cmd.ProcessState.ExitCode())
 	}
-	return fmt.Sprintf("%s\n[返回码: 0]", string(output))
+	return fmt.Sprintf("%s\n[返回码: 0]", outputStr)
 }
 
 // ExecuteSendInput 向进程发送输入
@@ -46,6 +52,8 @@ func ExecuteSendInput(args map[string]interface{}, pm *process.Manager) string {
 	}
 
 	if output != "" {
+		// 截取过长的输出
+		output = truncateOutput(output)
 		return fmt.Sprintf("[输出] 进程响应:\n```\n%s```\n状态: %s", output, status)
 	}
 	return fmt.Sprintf("[✓] 输入已发送（暂无输出）\n状态: %s", status)
@@ -63,6 +71,9 @@ func ExecuteGetOutput(args map[string]interface{}, pm *process.Manager) string {
 	if output == "" {
 		return fmt.Sprintf("[i] 暂无输出\n状态: %s", status)
 	}
+
+	// 截取过长的输出
+	output = truncateOutput(output)
 	return fmt.Sprintf("[输出] 进程输出:\n```\n%s```\n状态: %s", output, status)
 }
 
@@ -74,4 +85,26 @@ func ExecuteKillProcess(args map[string]interface{}, pm *process.Manager) string
 		return fmt.Sprintf("[✗] %v", err)
 	}
 	return fmt.Sprintf("[✓] 进程已终止: %s", processID)
+}
+
+// truncateOutput 截取过长的输出
+func truncateOutput(output string) string {
+	lines := strings.Split(output, "\n")
+	totalLines := len(lines)
+
+	// 如果少于30行，直接返回
+	const maxLines = 30
+	if totalLines <= maxLines {
+		return output
+	}
+
+	// 截取前10行和后10行
+	const headLines = 10
+	const tailLines = 10
+
+	head := strings.Join(lines[:headLines], "\n")
+	tail := strings.Join(lines[totalLines-tailLines:], "\n")
+
+	return fmt.Sprintf("%s\n\n... [已截断 %d 行输出] ...\n\n%s",
+		head, totalLines-headLines-tailLines, tail)
 }

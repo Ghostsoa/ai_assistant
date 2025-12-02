@@ -17,11 +17,89 @@ import (
 // ExecuteReadFile 读取文件
 func ExecuteReadFile(args map[string]interface{}) string {
 	file := args["file"].(string)
+
+	// 读取完整文件
 	content, err := os.ReadFile(file)
 	if err != nil {
 		return fmt.Sprintf("[✗] 读取失败: %v", err)
 	}
-	return fmt.Sprintf("[文件] 内容:\n```\n%s```", string(content))
+
+	// 分割成行
+	lines := strings.Split(string(content), "\n")
+	totalLines := len(lines)
+
+	// 获取可选的行号范围参数
+	var startLine, endLine int
+	if start, ok := args["start_line"].(float64); ok {
+		startLine = int(start)
+	} else {
+		startLine = 1
+	}
+	if end, ok := args["end_line"].(float64); ok {
+		endLine = int(end)
+	} else {
+		endLine = totalLines
+	}
+
+	// 检查文件大小
+	const maxLines = 1000
+
+	// 如果没有指定行号范围，且文件过大
+	if _, hasStart := args["start_line"]; !hasStart {
+		if _, hasEnd := args["end_line"]; !hasEnd {
+			if totalLines > maxLines {
+				// 文件过大，返回摘要
+				fileInfo, _ := os.Stat(file)
+				fileSize := fileInfo.Size()
+				sizeStr := formatFileSize(fileSize)
+
+				return fmt.Sprintf("[文件] %s\n"+
+					"[!] 文件过大，无法完整读取\n"+
+					"文件大小: %s\n"+
+					"总行数: %d 行\n\n"+
+					"提示: 请使用 start_line 和 end_line 参数按行号范围读取\n"+
+					"示例: {\"file\": \"%s\", \"start_line\": 1, \"end_line\": 100}",
+					file, sizeStr, totalLines, file)
+			}
+		}
+	}
+
+	// 验证行号范围
+	if startLine < 1 {
+		startLine = 1
+	}
+	if endLine > totalLines {
+		endLine = totalLines
+	}
+	if startLine > endLine {
+		return fmt.Sprintf("[✗] 行号范围无效: start_line(%d) > end_line(%d)", startLine, endLine)
+	}
+
+	// 提取指定范围的行
+	selectedLines := lines[startLine-1 : endLine]
+	result := strings.Join(selectedLines, "\n")
+
+	// 格式化输出
+	if startLine == 1 && endLine == totalLines {
+		return fmt.Sprintf("[文件] %s (共 %d 行):\n```\n%s\n```", file, totalLines, result)
+	} else {
+		return fmt.Sprintf("[文件] %s (第 %d-%d 行，共 %d 行):\n```\n%s\n```",
+			file, startLine, endLine, totalLines, result)
+	}
+}
+
+// formatFileSize 格式化文件大小
+func formatFileSize(size int64) string {
+	const unit = 1024
+	if size < unit {
+		return fmt.Sprintf("%d B", size)
+	}
+	div, exp := int64(unit), 0
+	for n := size / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(size)/float64(div), "KMGTPE"[exp])
 }
 
 // ExecuteEditFile 编辑文件

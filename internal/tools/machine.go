@@ -10,10 +10,8 @@ import (
 func ExecuteSwitchMachine(args map[string]interface{}, sm *state.Manager) string {
 	machineID, ok := args["machine_id"].(string)
 
-	// 不传参数：列出所有机器
 	if !ok || machineID == "" {
-		machines := sm.ListMachines()
-		return fmt.Sprintf("【可用控制机】\n%s", machines)
+		return "[✗] 参数错误：需要指定 machine_id"
 	}
 
 	// 切换机器

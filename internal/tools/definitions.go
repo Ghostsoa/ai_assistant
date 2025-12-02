@@ -147,16 +147,16 @@ func GetTools() []openai.Tool {
 			Type: openai.ToolTypeFunction,
 			Function: &openai.FunctionDefinition{
 				Name:        "switch_machine",
-				Description: "切换当前控制机。不传参数则列出所有可用机器。命令执行会自动路由到当前控制机。",
+				Description: "切换当前控制机。命令执行会自动路由到当前控制机。可用控制机列表已在系统提示词中显示。",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"machine_id": map[string]interface{}{
 							"type":        "string",
-							"description": "机器ID（可选，不传则列出所有机器）",
+							"description": "机器ID",
 						},
 					},
-					"required": []string{},
+					"required": []string{"machine_id"},
 				},
 			},
 		},

@@ -74,34 +74,26 @@ func BuildSystemPrompt(env environment.SystemEnvironment, sm *state.Manager) str
 		prompt.WriteString("\n**Python (系统自检)**: 系统未安装Python，如果用户要求运行Python脚本，请告知用户需要先安装Python\n")
 	}
 
-	// 添加控制机状态信息
-	currentMachine := sm.GetCurrentMachineID()
-	prompt.WriteString("\n## 当前控制机状态\n\n")
-	prompt.WriteString(fmt.Sprintf("**当前控制机**: %s\n", currentMachine))
-	prompt.WriteString(fmt.Sprintf("**当前目录**: %s\n", sm.GetCurrentDir()))
-	prompt.WriteString("\n**可用控制机**:\n")
+	// 控制机状态（简洁版）
+	prompt.WriteString("\n## 实时状态\n\n")
+	prompt.WriteString(fmt.Sprintf("**控制机**: %s | **目录**: %s\n\n", sm.GetCurrentMachineID(), sm.GetCurrentDir()))
+	prompt.WriteString("**可用机器**: ")
 	prompt.WriteString(sm.ListMachines())
 
-	// 终端实时快照
-	prompt.WriteString("\n## 【终端实时快照】（最近执行的命令和输出）\n\n")
-	prompt.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	prompt.WriteString(sm.GetTerminalSnapshot(50))
-	prompt.WriteString("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
-	prompt.WriteString("**重要**: 执行命令后，工具会返回\"请查看【终端实时快照】\"，你需要查看上方的终端快照来了解命令执行结果和当前状态。\n\n")
-
-	prompt.WriteString("## 工具使用建议\n\n")
-	prompt.WriteString("1. **搜索代码**: 优先使用 `search_code` 工具（跨平台，自动适配）\n")
-	prompt.WriteString("2. **查看目录**: 优先使用 `list_directory` 工具（跨平台，自动适配）\n")
-	prompt.WriteString("3. **Git操作**: ")
-	if env.HasGit {
-		prompt.WriteString("优先使用 `git_*` 工具，或使用run_command调用git命令\n")
-	} else {
-		prompt.WriteString("❌ Git未安装，不要尝试使用任何git命令\n")
+	// 终端快照
+	terminalSnapshot := sm.GetTerminalSnapshot(50)
+	if terminalSnapshot != "[终端为空]" {
+		prompt.WriteString("\n## 终端快照\n\n")
+		prompt.WriteString("```\n")
+		prompt.WriteString(terminalSnapshot)
+		prompt.WriteString("\n```\n")
+		prompt.WriteString("命令执行后查看此快照了解结果。\n")
 	}
-	prompt.WriteString("4. **运行命令**: 使用 `run_command` 时，会自动在当前控制机上执行\n")
-	prompt.WriteString("5. **切换控制机**: 使用 `switch_machine` 切换到不同的服务器\n")
 
-	prompt.WriteString("\n**重要**: 上述环境信息是程序自动检测的真实系统状态，不是假设。请严格遵守这些约束。\n")
+	prompt.WriteString("\n## 注意事项\n\n")
+	prompt.WriteString("- 命令自动在当前控制机执行，无需手动指定\n")
+	prompt.WriteString("- 控制机列表已在上方显示，无需调用工具查询\n")
+	prompt.WriteString("- 使用系统对应的命令（Windows用dir，Linux用ls）\n")
 
 	return prompt.String()
 }

@@ -234,61 +234,85 @@ func pushDirectorySync(task *SyncTask, sm *state.Manager) string {
 	// 更新总大小
 	task.TotalSize = totalSize
 
-	// 3. 逐个同步文件（使用upload API）
+	// 3. 并发同步文件（使用upload API）
+	const maxConcurrency = 10 // 最大并发数
 	var failed []string
-	fmt.Printf("[DEBUG] 开始同步 %d 个文件...\n", len(files))
+	var failedMutex sync.Mutex
+	var wg sync.WaitGroup
+
+	fmt.Printf("[DEBUG] 开始同步 %d 个文件（并发数: %d）...\n", len(files), maxConcurrency)
+
+	// 使用channel控制并发数
+	semaphore := make(chan struct{}, maxConcurrency)
 
 	for i, localFile := range files {
-		// 计算相对路径
-		relPath, _ := filepath.Rel(task.LocalPath, localFile)
-		// 转换为Unix路径（远程是Linux）
-		relPath = strings.ReplaceAll(relPath, "\\", "/")
-		remoteFile := task.RemotePath + "/" + relPath
+		wg.Add(1)
 
-		fmt.Printf("[DEBUG] [%d/%d] 同步: %s -> %s\n", i+1, len(files), localFile, remoteFile)
+		go func(idx int, file string) {
+			defer wg.Done()
 
-		// 读取文件
-		content, err := os.ReadFile(localFile)
-		if err != nil {
-			errMsg := fmt.Sprintf("读取失败: %v", err)
-			failed = append(failed, localFile+": "+errMsg)
-			fmt.Printf("[DEBUG] %s: %s\n", localFile, errMsg)
-			continue
-		}
+			// 获取信号量
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
 
-		// 创建远程子目录（使用Unix路径）
-		lastSlash := strings.LastIndex(remoteFile, "/")
-		if lastSlash > 0 {
-			remoteDir := remoteFile[:lastSlash]
-			mkdirCmd := fmt.Sprintf("mkdir -p '%s'", remoteDir)
-			_, mkdirErr := sm.ExecuteOnAgent(task.Machine, mkdirCmd)
-			if mkdirErr != nil {
-				fmt.Printf("[DEBUG] 创建目录失败 %s: %v\n", remoteDir, mkdirErr)
+			// 计算相对路径
+			relPath, _ := filepath.Rel(task.LocalPath, file)
+			// 转换为Unix路径（远程是Linux）
+			relPath = strings.ReplaceAll(relPath, "\\", "/")
+			remoteFile := task.RemotePath + "/" + relPath
+
+			fmt.Printf("[DEBUG] [%d/%d] 同步: %s -> %s\n", idx+1, len(files), file, remoteFile)
+
+			// 读取文件
+			content, err := os.ReadFile(file)
+			if err != nil {
+				errMsg := fmt.Sprintf("读取失败: %v", err)
+				failedMutex.Lock()
+				failed = append(failed, file+": "+errMsg)
+				failedMutex.Unlock()
+				fmt.Printf("[DEBUG] %s: %s\n", file, errMsg)
+				return
 			}
-		}
 
-		// 使用upload API传输
-		encoded := base64.StdEncoding.EncodeToString(content)
-		data := map[string]interface{}{
-			"path":       remoteFile,
-			"content":    encoded,
-			"offset":     0,
-			"total_size": len(content),
-		}
+			// 创建远程子目录（使用Unix路径）
+			lastSlash := strings.LastIndex(remoteFile, "/")
+			if lastSlash > 0 {
+				remoteDir := remoteFile[:lastSlash]
+				mkdirCmd := fmt.Sprintf("mkdir -p '%s'", remoteDir)
+				_, mkdirErr := sm.ExecuteOnAgent(task.Machine, mkdirCmd)
+				if mkdirErr != nil {
+					fmt.Printf("[DEBUG] 创建目录失败 %s: %v\n", remoteDir, mkdirErr)
+				}
+			}
 
-		_, err = sm.CallAgentAPI(task.Machine, "upload", data)
-		if err != nil {
-			errMsg := fmt.Sprintf("上传失败: %v", err)
-			failed = append(failed, localFile+": "+errMsg)
-			fmt.Printf("[DEBUG] %s: %s\n", localFile, errMsg)
-		} else {
-			// 更新进度
-			syncTasksMutex.Lock()
-			task.Transferred += int64(len(content))
-			syncTasksMutex.Unlock()
-			fmt.Printf("[DEBUG] ✓ %s (%.2f KB)\n", localFile, float64(len(content))/1024)
-		}
+			// 使用upload API传输
+			encoded := base64.StdEncoding.EncodeToString(content)
+			data := map[string]interface{}{
+				"path":       remoteFile,
+				"content":    encoded,
+				"offset":     0,
+				"total_size": len(content),
+			}
+
+			_, err = sm.CallAgentAPI(task.Machine, "upload", data)
+			if err != nil {
+				errMsg := fmt.Sprintf("上传失败: %v", err)
+				failedMutex.Lock()
+				failed = append(failed, file+": "+errMsg)
+				failedMutex.Unlock()
+				fmt.Printf("[DEBUG] %s: %s\n", file, errMsg)
+			} else {
+				// 更新进度
+				syncTasksMutex.Lock()
+				task.Transferred += int64(len(content))
+				syncTasksMutex.Unlock()
+				fmt.Printf("[DEBUG] ✓ %s (%.2f KB)\n", file, float64(len(content))/1024)
+			}
+		}(i, localFile)
 	}
+
+	// 等待所有上传完成
+	wg.Wait()
 
 	fmt.Printf("[DEBUG] 同步完成，成功: %d, 失败: %d\n", len(files)-len(failed), len(failed))
 

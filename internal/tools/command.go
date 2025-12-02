@@ -42,7 +42,7 @@ func ExecuteRunCommand(args map[string]interface{}, pm *process.Manager, sm *sta
 	if targetMachine != "local" {
 		machine := sm.GetMachine(targetMachine)
 		if machine != nil {
-			machineInfo = fmt.Sprintf("%s (%s)", machine.Description, machine.Host)
+			machineInfo = machine.Description
 		} else {
 			machineInfo = targetMachine
 		}
@@ -51,32 +51,14 @@ func ExecuteRunCommand(args map[string]interface{}, pm *process.Manager, sm *sta
 	if err != nil {
 		// 错误也记录到终端
 		sm.AppendTerminalOutput(targetMachine, command, fmt.Sprintf("[✗] %v", err))
-		return fmt.Sprintf("══════════════════════════════════════\n"+
-			"🖥️  机器: %s\n"+
-			"📝 命令: %s\n"+
-			"❌ 状态: 执行失败\n"+
-			"💬 错误: %v\n"+
-			"══════════════════════════════════════\n"+
-			"详细输出请查看【终端快照】",
+		return fmt.Sprintf("🖥️ [%s] %s\n[✗] 执行失败: %v\n详细信息请查看【终端快照】",
 			machineInfo, command, err)
 	}
 
 	// 更新终端快照
 	sm.AppendTerminalOutput(targetMachine, command, output)
 
-	// 返回详细信息
-	// 截取输出前100个字符作为预览
-	preview := output
-	if len(preview) > 100 {
-		preview = preview[:100] + "..."
-	}
-
-	return fmt.Sprintf("══════════════════════════════════════\n"+
-		"🖥️  机器: %s\n"+
-		"📝 命令: %s\n"+
-		"✅ 状态: 执行成功\n"+
-		"📤 输出预览:\n%s\n"+
-		"══════════════════════════════════════\n"+
-		"完整输出请查看【终端快照】",
-		machineInfo, command, preview)
+	// 返回简洁信息
+	return fmt.Sprintf("🖥️ [%s] %s\n[✓] 命令已执行，请查看【终端快照】",
+		machineInfo, command)
 }

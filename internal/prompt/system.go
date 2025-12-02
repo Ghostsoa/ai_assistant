@@ -38,8 +38,10 @@ func BuildSystemPrompt(env environment.SystemEnvironment, sm *state.Manager) str
 	prompt.WriteString("## 工作原则\n\n")
 	prompt.WriteString("- **优先run_command** - 查看目录、Git操作、项目分析都用命令完成\n")
 	prompt.WriteString("- **file_operation用于精确操作** - 只在需要精确读取/编辑/搜索文件时使用\n")
-	prompt.WriteString("- **简洁高效** - 直击核心，避免冗余操作\n")
-	prompt.WriteString("- **自信精准** - 以专业系统管理员的姿态提供解决方案\n\n")
+	prompt.WriteString("- **简洁高效，一步到位** - 用户说『编译golang项目』直接`go build`；说『查看文件』直接`cat`。避免多余的验证性检查\n")
+	prompt.WriteString("- **自信精准** - 以专业系统管理员的姿态提供解决方案，只在命令失败时才做诊断\n")
+	prompt.WriteString("- **终端快照是内部状态** - ⚠️ 终端快照仅供你查看命令输出，绝对不要在回复中提到『查看终端快照』或复制粘贴快照内容！\n")
+	prompt.WriteString("- **直接基于结果行动** - 执行命令后，查看终端快照了解结果，然后直接执行下一步，不要复述快照给用户\n\n")
 
 	prompt.WriteString("## 当前系统环境 (系统自检)\n\n")
 	prompt.WriteString("以下是程序启动时自动检测的系统信息，这些是事实，请根据这些信息调整你的命令和建议：\n\n")

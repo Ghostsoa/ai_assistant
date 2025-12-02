@@ -219,8 +219,10 @@ def handle_client(client_socket):
         
         # 路由到不同处理函数
         if action == 'execute':
-            # 原有的命令执行
-            command = request['command']
+            # 命令执行（从data中获取）
+            command = request.get('data', {}).get('command') or request.get('command')
+            if not command:
+                raise ValueError("Missing 'command' parameter")
             output = shell.execute(command)
             response = {'output': output, 'success': True}
             

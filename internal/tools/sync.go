@@ -239,7 +239,9 @@ func pushDirectorySync(task *SyncTask, sm *state.Manager) string {
 	for _, localFile := range files {
 		// 计算相对路径
 		relPath, _ := filepath.Rel(task.LocalPath, localFile)
-		remoteFile := filepath.Join(task.RemotePath, relPath)
+		// 转换为Unix路径（远程是Linux）
+		relPath = strings.ReplaceAll(relPath, "\\", "/")
+		remoteFile := task.RemotePath + "/" + relPath
 
 		// 读取文件
 		content, err := os.ReadFile(localFile)
@@ -248,10 +250,13 @@ func pushDirectorySync(task *SyncTask, sm *state.Manager) string {
 			continue
 		}
 
-		// 创建远程子目录
-		remoteDir := filepath.Dir(remoteFile)
-		mkdirCmd := fmt.Sprintf("mkdir -p '%s'", remoteDir)
-		sm.ExecuteOnAgent(task.Machine, mkdirCmd)
+		// 创建远程子目录（使用Unix路径）
+		lastSlash := strings.LastIndex(remoteFile, "/")
+		if lastSlash > 0 {
+			remoteDir := remoteFile[:lastSlash]
+			mkdirCmd := fmt.Sprintf("mkdir -p '%s'", remoteDir)
+			sm.ExecuteOnAgent(task.Machine, mkdirCmd)
+		}
 
 		// 使用upload API传输
 		encoded := base64.StdEncoding.EncodeToString(content)

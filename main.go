@@ -17,7 +17,9 @@ import (
 	"ai_assistant/internal/history"
 	"ai_assistant/internal/keyboard"
 	"ai_assistant/internal/process"
+	"ai_assistant/internal/prompt"
 	"ai_assistant/internal/session"
+	"ai_assistant/internal/state"
 	"ai_assistant/internal/tools"
 	"ai_assistant/internal/ui"
 
@@ -103,17 +105,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 初始化管理器
+	processManager := process.NewManager()
+	backupManager := backup.NewManager()
+	stateManager := state.NewManager()
+
 	// 初始化命令处理器
-	cmdHandler := command.NewHandler(sessionManager)
+	cmdHandler := command.NewHandler(sessionManager, stateManager)
 
 	// 显示当前会话
 	currentSession := sessionManager.GetCurrentSession()
 	fmt.Printf("[会话] %s [%s]\n", currentSession.Title, currentSession.ID)
 
-	// 初始化管理器
-	processManager := process.NewManager()
-	backupManager := backup.NewManager()
-	toolExecutor := tools.NewExecutor(processManager, backupManager)
+	// 创建工具执行器
+	toolExecutor := tools.NewExecutor(processManager, backupManager, stateManager)
 
 	// 配置API客户端
 	clientConfig := openai.DefaultConfig(appconfig.GlobalConfig.APIKey)
@@ -186,11 +191,20 @@ func main() {
 		// 打印 JARVIS 提示符（整轮对话只打印一次）
 		ui.PrintAIPrompt()
 
-		// 调用API（流式）
+		// 工具调用循环
 		for {
+			// 每次都重新生成系统提示词（包含最新终端状态）
+			systemPrompt := prompt.BuildSystemPrompt(env, stateManager)
+
+			// 构建消息列表（系统提示词 + 历史消息）
+			apiMessages := []openai.ChatCompletionMessage{
+				{Role: "system", Content: systemPrompt},
+			}
+			apiMessages = append(apiMessages, history.ConvertToOpenAI(messages)...)
+
 			stream, err := client.CreateChatCompletionStream(context.Background(), openai.ChatCompletionRequest{
 				Model:    appconfig.GlobalConfig.Model,
-				Messages: history.ConvertToOpenAI(messages),
+				Messages: apiMessages,
 				Tools:    tools.GetTools(),
 			})
 

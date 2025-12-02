@@ -5,8 +5,6 @@ import (
 	"os"
 
 	appconfig "ai_assistant/internal/config"
-	"ai_assistant/internal/environment"
-	"ai_assistant/internal/prompt"
 
 	"github.com/sashabaranov/go-openai"
 )
@@ -22,27 +20,16 @@ type Message struct {
 
 // Load 加载历史（限制最近N轮对话）
 func Load(historyFile string) []Message {
-	// 检测环境
-	env := environment.Detect()
-	systemPrompt := prompt.BuildSystemPrompt(env)
+	// 注意：不再在这里添加系统提示词，系统提示词由main.go每轮动态生成
 
 	data, err := os.ReadFile(historyFile)
 	if err != nil {
-		return []Message{{Role: "system", Content: systemPrompt}}
+		return []Message{}
 	}
 
 	var messages []Message
 	if err := json.Unmarshal(data, &messages); err != nil {
-		return []Message{{Role: "system", Content: systemPrompt}}
-	}
-
-	if len(messages) == 0 {
-		return []Message{{Role: "system", Content: systemPrompt}}
-	}
-
-	// 更新system prompt为当前环境
-	if len(messages) > 0 && messages[0].Role == "system" {
-		messages[0].Content = systemPrompt
+		return []Message{}
 	}
 
 	// 限制历史记录轮数

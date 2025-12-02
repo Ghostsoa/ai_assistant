@@ -5,18 +5,21 @@ import (
 	"strings"
 
 	"ai_assistant/internal/session"
+	"ai_assistant/internal/state"
 	"ai_assistant/internal/ui"
 )
 
 // Handler 命令处理器
 type Handler struct {
 	sessionManager *session.Manager
+	stateManager   *state.Manager
 }
 
 // NewHandler 创建命令处理器
-func NewHandler(sm *session.Manager) *Handler {
+func NewHandler(sm *session.Manager, stm *state.Manager) *Handler {
 	return &Handler{
 		sessionManager: sm,
+		stateManager:   stm,
 	}
 }
 
@@ -50,6 +53,10 @@ func (h *Handler) Handle(input string) (bool, error) {
 		return true, h.handleDelete(args)
 	case "/rename":
 		return true, h.handleRename(args)
+	case "/infect":
+		return true, h.handleInfect(args)
+	case "/machines":
+		return true, h.handleMachines()
 	case "/help":
 		return true, h.handleHelp()
 	default:
@@ -220,6 +227,43 @@ func (h *Handler) handleRename(args []string) error {
 	return nil
 }
 
+// handleInfect 寄生目标服务器
+func (h *Handler) handleInfect(args []string) error {
+	if len(args) < 3 {
+		return fmt.Errorf("用法: /infect <host> <user> <password> [alias]")
+	}
+
+	host := args[0]
+	user := args[1]
+	password := args[2]
+	alias := fmt.Sprintf("server-%d", len(h.stateManager.GetState().Machines))
+	if len(args) > 3 {
+		alias = args[3]
+	}
+
+	ui.PrintInfo(fmt.Sprintf("🦠 正在寄生目标服务器 %s@%s...", user, host))
+
+	// 调用infect脚本
+	if err := h.stateManager.InfectServer(host, user, password, alias); err != nil {
+		return fmt.Errorf("寄生失败: %v", err)
+	}
+
+	ui.PrintSuccess(fmt.Sprintf("✓ 成功寄生服务器！机器ID: %s", alias))
+	ui.PrintInfo("可以使用 /machines 查看所有控制机")
+	return nil
+}
+
+// handleMachines 列出所有控制机
+func (h *Handler) handleMachines() error {
+	fmt.Println()
+	ui.PrintInfo("可用控制机：")
+	fmt.Println()
+	fmt.Println(h.stateManager.ListMachines())
+	fmt.Println()
+	ui.PrintInfo("提示：对AI说\"切换到 <机器ID>\"可以切换控制机")
+	return nil
+}
+
 // handleHelp 显示帮助
 func (h *Handler) handleHelp() error {
 	fmt.Println()
@@ -230,6 +274,9 @@ func (h *Handler) handleHelp() error {
 	fmt.Println("  /switch <ID|序号> - 切换到指定会话")
 	fmt.Println("  /clear            - 清空当前会话历史")
 	fmt.Println("  /rename <ID|序号> <新标题> - 重命名会话")
+	fmt.Println()
+	fmt.Println("  /infect <host> <user> <password> [alias] - 寄生目标服务器")
+	fmt.Println("  /machines         - 列出所有控制机")
 	fmt.Println("  /delete <ID|序号> - 删除会话")
 	fmt.Println("  /help             - 显示此帮助")
 	fmt.Println("  /exit, /quit, /q  - 退出程序")

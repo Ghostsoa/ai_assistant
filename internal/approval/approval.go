@@ -13,14 +13,76 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
+// 命令白名单：查询类命令，无需批准
+var commandWhitelist = []string{
+	// 目录操作
+	"ls", "dir", "pwd", "cd", "tree", "pushd", "popd",
+	// 文件查看
+	"cat", "type", "more", "less", "head", "tail", "echo", "Get-Content",
+	// 信息查询
+	"whoami", "hostname", "date", "time", "ver", "uname", "systeminfo",
+	// 进程查询
+	"ps", "tasklist", "Get-Process",
+	// 网络查询
+	"ipconfig", "ifconfig", "ping", "tracert", "nslookup",
+	// Git查询
+	"git status", "git log", "git diff", "git branch",
+	// 其他查询
+	"which", "where", "env", "printenv", "set", "Get-Variable",
+}
+
+// 命令黑名单：需要TTY交互的命令，无法在持久Shell中工作，直接拒绝
+var commandBlacklist = []string{
+	// 文本编辑器（需要TTY）
+	"nano", "vim", "vi", "emacs", "notepad",
+	// 交互式数据库客户端（直接连接）
+	"mysql", "psql", "mongo", "redis-cli",
+	// 其他交互式程序
+	"top", "htop", "less", "more",
+	// 注意：ssh/telnet/ftp 如果使用非交互模式（如 ssh user@host "command"）是允许的
+	// 只有交互式登录（如 ssh user@host）才会有问题，但我们允许AI尝试
+}
+
+// isCommandInList 检查命令是否在列表中
+func isCommandInList(command string, list []string) bool {
+	command = strings.ToLower(strings.TrimSpace(command))
+	for _, item := range list {
+		if strings.HasPrefix(command, strings.ToLower(item)) {
+			return true
+		}
+	}
+	return false
+}
+
 // HandleApproval 处理工具调用批准
 func HandleApproval(toolCalls []openai.ToolCall) map[string]bool {
 	// 分类工具调用
 	var immediateApprovalOps []openai.ToolCall // 需要立即批准的
 	var autoApprovalOps []openai.ToolCall      // 自动批准的
+	var blacklistedOps []openai.ToolCall       // 黑名单命令
 
 	for _, tc := range toolCalls {
-		if tools.NeedsImmediateApproval(tc.Function.Name) {
+		// 特殊处理 run_command：检查命令白名单/黑名单
+		if tc.Function.Name == "run_command" {
+			var args map[string]interface{}
+			json.Unmarshal([]byte(tc.Function.Arguments), &args)
+			if command, ok := args["command"].(string); ok {
+				// 黑名单：直接拒绝
+				if isCommandInList(command, commandBlacklist) {
+					blacklistedOps = append(blacklistedOps, tc)
+					continue
+				}
+				// 白名单：自动批准
+				if isCommandInList(command, commandWhitelist) {
+					autoApprovalOps = append(autoApprovalOps, tc)
+					continue
+				}
+				// 其他：需要批准
+				immediateApprovalOps = append(immediateApprovalOps, tc)
+			} else {
+				immediateApprovalOps = append(immediateApprovalOps, tc)
+			}
+		} else if tools.NeedsImmediateApproval(tc.Function.Name) {
 			immediateApprovalOps = append(immediateApprovalOps, tc)
 		} else {
 			autoApprovalOps = append(autoApprovalOps, tc)
@@ -28,6 +90,17 @@ func HandleApproval(toolCalls []openai.ToolCall) map[string]bool {
 	}
 
 	approvals := make(map[string]bool)
+
+	// 黑名单命令：直接拒绝
+	if len(blacklistedOps) > 0 {
+		fmt.Println("\n[✗] 以下命令被黑名单拒绝（不支持交互式命令）：")
+		for _, tc := range blacklistedOps {
+			var args map[string]interface{}
+			json.Unmarshal([]byte(tc.Function.Arguments), &args)
+			fmt.Printf("  - %s\n", args["command"])
+			approvals[tc.ID] = false
+		}
+	}
 
 	// 所有非立即批准的操作：自动批准（包括查询、修改等）
 	for _, tc := range autoApprovalOps {

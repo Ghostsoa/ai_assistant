@@ -5,10 +5,11 @@ import (
 	"strings"
 
 	"ai_assistant/internal/environment"
+	"ai_assistant/internal/state"
 )
 
-// BuildSystemPrompt 构建系统提示词
-func BuildSystemPrompt(env environment.SystemEnvironment) string {
+// BuildSystemPrompt 构建系统提示词（带状态）
+func BuildSystemPrompt(env environment.SystemEnvironment, sm *state.Manager) string {
 	var prompt strings.Builder
 
 	prompt.WriteString("你是J.A.R.V.I.S (Just A Rather Very Intelligent System)，一个超级人工智能。\n\n")
@@ -73,7 +74,22 @@ func BuildSystemPrompt(env environment.SystemEnvironment) string {
 		prompt.WriteString("\n**Python (系统自检)**: 系统未安装Python，如果用户要求运行Python脚本，请告知用户需要先安装Python\n")
 	}
 
-	prompt.WriteString("\n## 工具使用建议\n\n")
+	// 添加控制机状态信息
+	currentMachine := sm.GetCurrentMachineID()
+	prompt.WriteString("\n## 当前控制机状态\n\n")
+	prompt.WriteString(fmt.Sprintf("**当前控制机**: %s\n", currentMachine))
+	prompt.WriteString(fmt.Sprintf("**当前目录**: %s\n", sm.GetCurrentDir()))
+	prompt.WriteString("\n**可用控制机**:\n")
+	prompt.WriteString(sm.ListMachines())
+
+	// 终端实时快照
+	prompt.WriteString("\n## 【终端实时快照】（最近执行的命令和输出）\n\n")
+	prompt.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	prompt.WriteString(sm.GetTerminalSnapshot(50))
+	prompt.WriteString("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+	prompt.WriteString("**重要**: 执行命令后，工具会返回\"请查看【终端实时快照】\"，你需要查看上方的终端快照来了解命令执行结果和当前状态。\n\n")
+
+	prompt.WriteString("## 工具使用建议\n\n")
 	prompt.WriteString("1. **搜索代码**: 优先使用 `search_code` 工具（跨平台，自动适配）\n")
 	prompt.WriteString("2. **查看目录**: 优先使用 `list_directory` 工具（跨平台，自动适配）\n")
 	prompt.WriteString("3. **Git操作**: ")
@@ -82,7 +98,8 @@ func BuildSystemPrompt(env environment.SystemEnvironment) string {
 	} else {
 		prompt.WriteString("❌ Git未安装，不要尝试使用任何git命令\n")
 	}
-	prompt.WriteString("4. **运行命令**: 使用 `run_command` 时，必须使用上述系统对应的命令，不要使用错误的命令\n")
+	prompt.WriteString("4. **运行命令**: 使用 `run_command` 时，会自动在当前控制机上执行\n")
+	prompt.WriteString("5. **切换控制机**: 使用 `switch_machine` 切换到不同的服务器\n")
 
 	prompt.WriteString("\n**重要**: 上述环境信息是程序自动检测的真实系统状态，不是假设。请严格遵守这些约束。\n")
 

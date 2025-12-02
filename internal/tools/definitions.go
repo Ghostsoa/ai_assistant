@@ -126,7 +126,7 @@ func GetTools() []openai.Tool {
 			Type: openai.ToolTypeFunction,
 			Function: &openai.FunctionDefinition{
 				Name:        "run_command",
-				Description: "执行命令（需用户批准，不可撤销）",
+				Description: "在持久Shell中执行命令（保持工作目录和环境变量）。白名单命令（ls/pwd/cd等查询）自动批准；黑名单命令（nano/vim等交互式）直接拒绝；其他命令需用户批准。",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -140,6 +140,23 @@ func GetTools() []openai.Tool {
 						},
 					},
 					"required": []string{"command", "interactive"},
+				},
+			},
+		},
+		{
+			Type: openai.ToolTypeFunction,
+			Function: &openai.FunctionDefinition{
+				Name:        "switch_machine",
+				Description: "切换当前控制机。不传参数则列出所有可用机器。命令执行会自动路由到当前控制机。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"machine_id": map[string]interface{}{
+							"type":        "string",
+							"description": "机器ID（可选，不传则列出所有机器）",
+						},
+					},
+					"required": []string{},
 				},
 			},
 		},

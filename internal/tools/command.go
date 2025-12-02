@@ -2,18 +2,19 @@ package tools
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
 	"ai_assistant/internal/process"
+	"ai_assistant/internal/state"
 )
 
 // ExecuteRunCommand 执行命令
-func ExecuteRunCommand(args map[string]interface{}, pm *process.Manager) string {
+func ExecuteRunCommand(args map[string]interface{}, pm *process.Manager, sm *state.Manager) string {
 	command := args["command"].(string)
-	interactive := args["interactive"].(bool)
+	interactive, _ := args["interactive"].(bool)
 
+	// 交互式：启动新进程
 	if interactive {
 		processID, err := pm.StartProcess(command)
 		if err != nil {
@@ -22,17 +23,32 @@ func ExecuteRunCommand(args map[string]interface{}, pm *process.Manager) string 
 		return fmt.Sprintf("[✓] 进程已启动\n进程ID: %s\n命令: %s", processID, command)
 	}
 
-	cmd := exec.Command("bash", "-c", command)
-	output, err := cmd.CombinedOutput()
-	outputStr := string(output)
+	// 获取当前控制机
+	currentMachine := sm.GetCurrentMachineID()
 
-	// 截取过长的输出
-	outputStr = truncateOutput(outputStr)
+	var output string
+	var err error
+
+	// 根据控制机类型路由
+	if currentMachine == "local" {
+		// 本地执行
+		output, err = pm.ExecuteInPersistentShell(command)
+	} else {
+		// 远程寄生虫执行
+		output, err = sm.ExecuteOnAgent(currentMachine, command)
+	}
 
 	if err != nil {
-		return fmt.Sprintf("%s\n[返回码: %d]", outputStr, cmd.ProcessState.ExitCode())
+		// 错误也记录到终端
+		sm.AppendTerminalOutput(currentMachine, command, fmt.Sprintf("[✗] %v", err))
+		return "[✗] 执行失败，请查看【终端实时快照】"
 	}
-	return fmt.Sprintf("%s\n[返回码: 0]", outputStr)
+
+	// 更新终端快照
+	sm.AppendTerminalOutput(currentMachine, command, output)
+
+	// 返回简短提示
+	return "[✓] 命令已执行，请查看【终端实时快照】"
 }
 
 // ExecuteSendInput 向进程发送输入

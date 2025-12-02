@@ -6,6 +6,7 @@ import (
 
 	"ai_assistant/internal/backup"
 	"ai_assistant/internal/process"
+	"ai_assistant/internal/state"
 
 	"github.com/sashabaranov/go-openai"
 )
@@ -14,13 +15,15 @@ import (
 type Executor struct {
 	ProcessManager *process.Manager
 	BackupManager  *backup.Manager
+	StateManager   *state.Manager
 }
 
 // NewExecutor 创建工具执行器
-func NewExecutor(pm *process.Manager, bm *backup.Manager) *Executor {
+func NewExecutor(pm *process.Manager, bm *backup.Manager, sm *state.Manager) *Executor {
 	return &Executor{
 		ProcessManager: pm,
 		BackupManager:  bm,
+		StateManager:   sm,
 	}
 }
 
@@ -44,7 +47,9 @@ func (e *Executor) Execute(toolCall openai.ToolCall) string {
 		return ExecuteDeleteFile(toolCall.ID, args, e.BackupManager)
 	// 命令执行
 	case "run_command":
-		return ExecuteRunCommand(args, e.ProcessManager)
+		return ExecuteRunCommand(args, e.ProcessManager, e.StateManager)
+	case "switch_machine":
+		return ExecuteSwitchMachine(args, e.StateManager)
 	case "send_input":
 		return ExecuteSendInput(args, e.ProcessManager)
 	case "get_output":

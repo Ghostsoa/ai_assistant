@@ -278,7 +278,7 @@ func (m *Manager) ListMachines() string {
 		} else if id == slot2ID {
 			marker = "●2" // Slot 2
 		}
-		result += fmt.Sprintf("  %s %s (%s)\n", marker, machine.ID, machine.Description)
+		result += fmt.Sprintf("  %s %s\n", marker, machine.ID)
 	}
 	return result
 }

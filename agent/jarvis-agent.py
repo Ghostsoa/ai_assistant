@@ -19,64 +19,72 @@ CHUNK_SIZE = 1024 * 1024  # 1MB 分块大小
 API_KEY = os.environ.get('JARVIS_API_KEY', 'JARVIS_GLOBAL_SECRET_KEY_2024')
 
 class PersistentShell:
-    """持久Shell - 与本地ExecuteInPersistentShell能力一致"""
+    """持久Shell - 完整终端能力，支持工作目录和环境变量持久化"""
     def __init__(self):
-        # 启动bash（交互式）
-        self.process = subprocess.Popen(
-            ['/bin/bash', '-i'],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            bufsize=0,
-            text=True
-        )
-        
-        # 等待shell初始化
-        time.sleep(0.5)
-        # 清空初始化输出
-        self._read_available()
-    
-    def _read_available(self):
-        """读取当前可用的所有输出"""
-        output = []
-        while True:
-            ready, _, _ = select.select([self.process.stdout], [], [], 0.1)
-            if not ready:
-                break
-            line = self.process.stdout.readline()
-            if line:
-                output.append(line)
-        return ''.join(output)
+        # 当前工作目录
+        self.cwd = os.path.expanduser('~')
+        # 环境变量（继承系统环境）
+        self.env = os.environ.copy()
+        # 上次工作目录（用于 cd -）
+        self.oldpwd = self.cwd
     
     def execute(self, command):
-        """执行命令（使用marker机制，和本地一致）"""
-        # 生成唯一marker
-        marker = f"__END_{int(time.time() * 1000000)}__"
-        
-        # 发送命令 + marker
-        cmd_line = f"{command}; echo {marker}\n"
-        self.process.stdin.write(cmd_line)
-        self.process.stdin.flush()
-        
-        # 收集输出，直到看到marker
-        output = []
-        max_wait = 300  # 最多等待30秒（支持go build等耗时命令）
-        
-        for _ in range(max_wait):
-            time.sleep(0.1)
-            lines = self._read_available()
-            output.append(lines)
+        """执行命令并返回输出"""
+        try:
+            # 保存当前目录（用于cd -）
+            old_cwd = self.cwd
             
-            # 检查是否包含marker
-            if marker in lines:
-                # 移除marker行
-                full_output = ''.join(output)
-                lines_list = full_output.split('\n')
-                filtered = [l for l in lines_list if marker not in l and '__END_' not in l]
-                return '\n'.join(filtered).strip()
-        
-        # 超时，返回当前输出
-        return ''.join(output).strip()
+            # 在当前工作目录和环境中执行命令
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=self.cwd,
+                env=self.env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                executable='/bin/bash'
+            )
+            
+            # 合并stdout和stderr
+            output = result.stdout
+            if result.stderr:
+                output += result.stderr
+            
+            # 截断输出（最多50行）
+            lines = output.split('\n')
+            if len(lines) > 50:
+                output = '\n'.join(lines[:50]) + f"\n... [省略 {len(lines) - 50} 行]"
+            
+            # 执行成功后，获取真实的当前工作目录
+            if result.returncode == 0:
+                # 执行pwd获取真实路径（支持cd、cd -、cd ~等所有情况）
+                pwd_result = subprocess.run(
+                    f'cd {self.cwd} && {command} && pwd',
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    executable='/bin/bash'
+                )
+                
+                if pwd_result.returncode == 0:
+                    new_cwd = pwd_result.stdout.strip().split('\n')[-1]
+                    if new_cwd and os.path.isabs(new_cwd):
+                        # 更新OLDPWD（cd -需要）
+                        if self.cwd != new_cwd:
+                            self.oldpwd = self.cwd
+                            self.env['OLDPWD'] = self.oldpwd
+                        
+                        self.cwd = new_cwd
+                        self.env['PWD'] = self.cwd
+            
+            return output.strip()
+            
+        except subprocess.TimeoutExpired:
+            return "[✗] 命令执行超时（30秒）"
+        except Exception as e:
+            return f"[✗] 命令执行失败: {str(e)}"
 
 # 全局Shell实例
 shell = PersistentShell()
@@ -309,9 +317,13 @@ def handle_client(client_socket):
             print(f"[DEBUG] 执行命令: {command}")  # 调试日志
             output = shell.execute(command)
             print(f"[DEBUG] 命令输出长度: {len(output)}")  # 调试日志
-            print(f"[DEBUG] 命令输出前100字符: {output[:100]}")  # 调试日志
+            print(f"[DEBUG] 当前工作目录: {shell.cwd}")  # 调试日志
             
-            response = {'output': output, 'success': True}
+            response = {
+                'output': output,
+                'cwd': shell.cwd,  # 返回当前工作目录
+                'success': True
+            }
             
         elif action == 'upload':
             response = handle_upload(request['data'])

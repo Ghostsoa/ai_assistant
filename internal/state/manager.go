@@ -296,22 +296,28 @@ func (m *Manager) AppendTerminalOutput(machineID, command, output string) {
 	// 截断输出（最多15行）
 	truncated := truncateTerminalOutput(output, 15)
 
-	// 判断成功/失败
-	status := "✓"
-	if strings.Contains(strings.ToLower(output), "error") ||
-		strings.Contains(strings.ToLower(output), "failed") ||
-		strings.Contains(output, "[✗]") {
-		status = "✗"
-	}
+	// 构建提示符（模拟真实终端）
+	// 格式: root@hostname:~/dir#
+	prompt := buildPrompt(machine)
 
-	// 构建终端行（带时间戳和状态）
-	timestamp := time.Now().Format("15:04:05")
-	termLine := fmt.Sprintf("[%s %s] $ %s\n%s\n",
-		timestamp,
-		status,
-		command,
-		truncated,
-	)
+	// 构建终端行（真实终端格式）
+	var termLine string
+	if truncated == "" {
+		// 无输出时，空一行再显示下一个提示符（模拟真实终端行为）
+		termLine = fmt.Sprintf("%s %s\n\n%s ",
+			prompt,
+			command,
+			prompt,
+		)
+	} else {
+		// 有输出时，显示提示符、命令和输出，然后是下一个提示符
+		termLine = fmt.Sprintf("%s %s\n%s\n%s ",
+			prompt,
+			command,
+			truncated,
+			prompt,
+		)
+	}
 
 	// 找到对应的slot并追加
 	for _, slot := range m.state.TerminalSlots {
@@ -323,6 +329,34 @@ func (m *Manager) AppendTerminalOutput(machineID, command, output string) {
 			}
 		}
 	}
+}
+
+// buildPrompt 构建终端提示符
+func buildPrompt(machine *Machine) string {
+	// 使用机器的Description作为显示名称
+	machineName := machine.Description
+	if machineName == "" {
+		machineName = machine.ID
+	}
+
+	// 获取当前目录（简化显示，~代表home）
+	dir := machine.CurrentDir
+	if dir == "" {
+		dir = "~"
+	} else if strings.HasPrefix(dir, "/root") {
+		dir = "~" + strings.TrimPrefix(dir, "/root")
+	} else if strings.HasPrefix(dir, "/home/") {
+		parts := strings.SplitN(strings.TrimPrefix(dir, "/home/"), "/", 2)
+		if len(parts) == 2 {
+			dir = "~" + parts[1]
+		}
+	}
+	if dir == "" {
+		dir = "~"
+	}
+
+	// 返回格式: root@机器名:dir#
+	return fmt.Sprintf("root@%s:%s#", machineName, dir)
 }
 
 // truncateTerminalOutput 截断终端输出
@@ -457,6 +491,16 @@ func (m *Manager) ExecuteOnAgent(machineID, command string) (string, error) {
 
 	// 调试日志
 	fmt.Printf("[DEBUG] resp keys: %v\n", getKeys(resp))
+
+	// 更新机器的当前工作目录
+	if cwd, ok := resp["cwd"].(string); ok {
+		m.mutex.Lock()
+		if machine := m.state.Machines[machineID]; machine != nil {
+			machine.CurrentDir = cwd
+		}
+		m.mutex.Unlock()
+	}
+
 	if output, ok := resp["output"].(string); ok {
 		fmt.Printf("[DEBUG] output length: %d\n", len(output))
 		return output, nil

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -12,14 +11,12 @@ import (
 
 	"ai_assistant/internal/approval"
 	"ai_assistant/internal/backup"
-	"ai_assistant/internal/client"
 	"ai_assistant/internal/command"
 	appconfig "ai_assistant/internal/config"
 	"ai_assistant/internal/environment"
 	"ai_assistant/internal/history"
 	"ai_assistant/internal/keyboard"
 	"ai_assistant/internal/process"
-	"ai_assistant/internal/server"
 	"ai_assistant/internal/session"
 	"ai_assistant/internal/tools"
 	"ai_assistant/internal/ui"
@@ -53,34 +50,7 @@ func getReasoningContent(response openai.ChatCompletionStreamResponse) string {
 }
 
 func main() {
-	// 解析命令行参数
-	daemon := flag.Bool("daemon", false, "作为后台服务运行")
-	flag.Parse()
-
-	// Daemon 模式：启动后台服务
-	if *daemon {
-		if err := appconfig.Initialize(); err != nil {
-			fmt.Printf("[✗] 初始化失败: %v\n", err)
-			os.Exit(1)
-		}
-		if err := server.Start(); err != nil {
-			fmt.Printf("[✗] Server 启动失败: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
-
-	// 客户端模式：如果有参数，发送到 Server
-	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
-		query := strings.Join(os.Args[1:], " ")
-		if err := client.Send(query); err != nil {
-			fmt.Fprintf(os.Stderr, "错误: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
-
-	// 交互模式：初始化配置
+	// 初始化配置
 	if err := appconfig.Initialize(); err != nil {
 		fmt.Printf("[✗] 初始化失败: %v\n", err)
 		fmt.Println("\n按回车键退出...")

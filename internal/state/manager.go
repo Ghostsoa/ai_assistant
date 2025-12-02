@@ -303,20 +303,11 @@ func (m *Manager) AppendTerminalOutput(machineID, command, output string) {
 	// 构建终端行（真实终端格式）
 	var termLine string
 	if truncated == "" {
-		// 无输出时，空一行再显示下一个提示符（模拟真实终端行为）
-		termLine = fmt.Sprintf("%s %s\n\n%s ",
-			prompt,
-			command,
-			prompt,
-		)
+		// 无输出时，只显示提示符和命令
+		termLine = fmt.Sprintf("%s %s\n", prompt, command)
 	} else {
-		// 有输出时，显示提示符、命令和输出，然后是下一个提示符
-		termLine = fmt.Sprintf("%s %s\n%s\n%s ",
-			prompt,
-			command,
-			truncated,
-			prompt,
-		)
+		// 有输出时，显示提示符、命令和输出
+		termLine = fmt.Sprintf("%s %s\n%s\n", prompt, command, truncated)
 	}
 
 	// 找到对应的slot并追加
@@ -398,7 +389,8 @@ func (m *Manager) GetTerminalSnapshot() string {
 			for i := start; i < len(slot1.Buffer); i++ {
 				result += slot1.Buffer[i]
 			}
-			result += "\n"
+			// 添加当前提示符（显示当前状态）
+			result += buildPrompt(machine) + " \n\n"
 		}
 	}
 
@@ -423,6 +415,8 @@ func (m *Manager) GetTerminalSnapshot() string {
 			for i := start; i < len(slot2.Buffer); i++ {
 				result += slot2.Buffer[i]
 			}
+			// 添加当前提示符（显示当前状态）
+			result += buildPrompt(machine) + " \n"
 		}
 	}
 

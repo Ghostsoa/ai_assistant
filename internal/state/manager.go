@@ -611,6 +611,8 @@ func (m *Manager) InfectServer(host, user, password, alias string) error {
 
 				// 添加到控制机列表（不保存密钥，使用全局密钥）
 				m.mutex.Lock()
+				defer m.mutex.Unlock()
+
 				m.state.Machines[machineID] = &Machine{
 					ID:          machineID,
 					Host:        machineHost,
@@ -620,7 +622,6 @@ func (m *Manager) InfectServer(host, user, password, alias string) error {
 					// SecretKey 不再保存，统一使用全局配置
 					CurrentDir: "/root",
 				}
-				m.mutex.Unlock()
 
 				// 保存状态
 				return m.Save()
@@ -630,3 +631,5 @@ func (m *Manager) InfectServer(host, user, password, alias string) error {
 
 	return fmt.Errorf("无法解析寄生结果")
 }
+
+// ...

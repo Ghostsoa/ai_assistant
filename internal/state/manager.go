@@ -134,13 +134,16 @@ func (m *Manager) GetCurrentDir() string {
 // SwitchMachine 切换控制机
 func (m *Manager) SwitchMachine(machineID string) error {
 	m.mutex.Lock()
-	defer m.mutex.Unlock()
 
 	if _, exists := m.state.Machines[machineID]; !exists {
+		m.mutex.Unlock()
 		return fmt.Errorf("机器不存在: %s", machineID)
 	}
 
 	m.state.CurrentMachine = machineID
+	m.mutex.Unlock()
+
+	// 解锁后再保存，避免死锁
 	return m.Save()
 }
 

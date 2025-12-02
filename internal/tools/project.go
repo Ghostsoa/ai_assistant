@@ -6,18 +6,47 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"ai_assistant/internal/state"
 )
 
-// ExecuteListDirectory 列出目录
-func ExecuteListDirectory(args map[string]interface{}) string {
+// ExecuteListDirectory 列出目录（支持远程，优化版）
+func ExecuteListDirectory(args map[string]interface{}, sm *state.Manager) string {
 	path := "."
 	if p, ok := args["path"].(string); ok && p != "" {
 		path = p
 	}
 
+	currentMachine := sm.GetCurrentMachineID()
+
+	// 远程机器：直接使用ls命令
+	if currentMachine != "local" {
+		cmd := fmt.Sprintf("ls -lah '%s' 2>&1 || echo '[目录不存在]'", path)
+		output, err := sm.ExecuteOnAgent(currentMachine, cmd)
+		if err != nil {
+			return fmt.Sprintf("[✗] 列出目录失败: %v", err)
+		}
+
+		if strings.Contains(output, "[目录不存在]") {
+			return fmt.Sprintf("[✗] 目录不存在: %s", path)
+		}
+
+		return fmt.Sprintf("[目录] %s (机器: %s):\n```\n%s```", path, currentMachine, output)
+	}
+
+	// 本地机器：原逻辑
 	recursive := false
 	if r, ok := args["recursive"].(bool); ok {
 		recursive = r
+	}
+
+	// 安全检查：禁止扫描根目录和大型目录
+	absPath, _ := filepath.Abs(path)
+	dangerousPaths := []string{"/", "/root", "/home", "/usr", "/var", "C:\\", "D:\\"}
+	for _, danger := range dangerousPaths {
+		if absPath == danger || strings.HasPrefix(absPath, danger+string(filepath.Separator)) {
+			return fmt.Sprintf("[✗] 为避免系统过载，禁止扫描大型目录: %s\n提示：请使用 run_command 执行 ls 命令", absPath)
+		}
 	}
 
 	pattern := ""

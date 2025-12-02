@@ -11,104 +11,76 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// Executor 工具执行器
-type Executor struct {
+// ExecutorSimplified 简化版工具执行器
+type ExecutorSimplified struct {
 	ProcessManager *process.Manager
 	BackupManager  *backup.Manager
 	StateManager   *state.Manager
 }
 
-// NewExecutor 创建工具执行器
-func NewExecutor(pm *process.Manager, bm *backup.Manager, sm *state.Manager) *Executor {
-	return &Executor{
+// NewExecutorSimplified 创建简化版执行器
+func NewExecutorSimplified(pm *process.Manager, bm *backup.Manager, sm *state.Manager) *ExecutorSimplified {
+	return &ExecutorSimplified{
 		ProcessManager: pm,
 		BackupManager:  bm,
 		StateManager:   sm,
 	}
 }
 
-// Execute 执行工具
-func (e *Executor) Execute(toolCall openai.ToolCall) string {
+// Execute 执行工具（简化版）
+func (e *ExecutorSimplified) Execute(toolCall openai.ToolCall) string {
 	var args map[string]interface{}
 	json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
 
 	switch toolCall.Function.Name {
-	// 网络工具
-	case "web_search":
-		return ExecuteWebSearch(args)
-	// 文件操作
-	case "read_file":
-		return ExecuteReadFile(args, e.StateManager)
-	case "edit_file":
-		return ExecuteEditFile(toolCall.ID, args, e.BackupManager)
-	case "rename_symbol":
-		return ExecuteRenameSymbol(toolCall.ID, args, e.BackupManager)
-	case "delete_file":
-		return ExecuteDeleteFile(toolCall.ID, args, e.BackupManager)
-	// 命令执行
+	case "file_operation":
+		return e.executeFileOperation(toolCall.ID, args)
 	case "run_command":
 		return ExecuteRunCommand(args, e.ProcessManager, e.StateManager)
 	case "switch_machine":
 		return ExecuteSwitchMachine(args, e.StateManager)
-	case "send_input":
-		return ExecuteSendInput(args, e.ProcessManager)
-	case "get_output":
-		return ExecuteGetOutput(args, e.ProcessManager)
-	case "kill_process":
-		return ExecuteKillProcess(args, e.ProcessManager)
-	// 代码搜索
-	case "search_code":
-		return ExecuteSearchCode(args)
-	case "find_symbol":
-		return ExecuteFindSymbol(args)
-	// 项目分析
-	case "list_directory":
-		return ExecuteListDirectory(args)
-	case "get_project_structure":
-		return ExecuteGetProjectStructure(args)
-	case "get_file_stats":
-		return ExecuteGetFileStats(args)
-	// Git工具
-	case "git_status":
-		return ExecuteGitStatus(args)
-	case "git_diff":
-		return ExecuteGitDiff(args)
-	case "git_commit":
-		return ExecuteGitCommit(args)
+	case "web_search":
+		return ExecuteWebSearch(args)
 	default:
 		return fmt.Sprintf("[✗] 未知工具: %s", toolCall.Function.Name)
 	}
 }
 
-// NeedsImmediateApproval 是否需要立即批准
-func NeedsImmediateApproval(functionName string) bool {
-	// 只有不可撤销的执行类操作需要立即批准
-	dangerousTools := []string{
-		"run_command",
-		"send_input",
-		"kill_process",
-		"git_commit", // Git提交也不可撤销
+// executeFileOperation 执行文件操作（统一入口）
+func (e *ExecutorSimplified) executeFileOperation(toolCallID string, args map[string]interface{}) string {
+	action, ok := args["action"].(string)
+	if !ok {
+		return "[✗] 缺少action参数"
 	}
-	for _, tool := range dangerousTools {
-		if tool == functionName {
-			return true
-		}
+
+	switch action {
+	case "read":
+		return ExecuteReadFile(args, e.StateManager)
+	case "edit":
+		return ExecuteEditFile(toolCallID, args, e.BackupManager, e.StateManager)
+	case "rename":
+		return ExecuteRenameSymbol(toolCallID, args, e.BackupManager)
+	case "delete":
+		return ExecuteDeleteFile(toolCallID, args, e.BackupManager)
+	case "search":
+		return ExecuteSearchCode(args, e.StateManager)
+	default:
+		return fmt.Sprintf("[✗] 未知文件操作: %s", action)
 	}
-	return false
 }
 
-// IsModifyOperation 是否为修改操作
-func IsModifyOperation(functionName string) bool {
-	// 可撤销的修改操作
-	modifyTools := []string{
-		"edit_file",
-		"rename_symbol",
-		"delete_file",
+// NeedsImmediateApproval 是否需要立即批准（简化版）
+func (e *ExecutorSimplified) NeedsImmediateApproval(toolCall openai.ToolCall) bool {
+	switch toolCall.Function.Name {
+	case "run_command":
+		return true
+	case "file_operation":
+		var args map[string]interface{}
+		json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
+		action, _ := args["action"].(string)
+		// edit, rename, delete 需要批准
+		return action == "edit" || action == "rename" || action == "delete"
+	default:
+		return false
 	}
-	for _, tool := range modifyTools {
-		if tool == functionName {
-			return true
-		}
-	}
-	return false
 }

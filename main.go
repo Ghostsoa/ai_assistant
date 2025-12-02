@@ -117,8 +117,8 @@ func main() {
 	currentSession := sessionManager.GetCurrentSession()
 	fmt.Printf("[会话] %s [%s]\n", currentSession.Title, currentSession.ID)
 
-	// 创建工具执行器
-	toolExecutor := tools.NewExecutor(processManager, backupManager, stateManager)
+	// 创建工具执行器（简化版）
+	toolExecutor := tools.NewExecutorSimplified(processManager, backupManager, stateManager)
 
 	// 配置API客户端
 	clientConfig := openai.DefaultConfig(appconfig.GlobalConfig.APIKey)
@@ -205,7 +205,7 @@ func main() {
 			stream, err := client.CreateChatCompletionStream(context.Background(), openai.ChatCompletionRequest{
 				Model:    appconfig.GlobalConfig.Model,
 				Messages: apiMessages,
-				Tools:    tools.GetTools(),
+				Tools:    tools.GetToolsSimplified(),
 			})
 
 			if err != nil {
@@ -339,7 +339,7 @@ func main() {
 			}
 
 			// 批准流程
-			approvals := approval.HandleApproval(toolCalls)
+			approvals := approval.HandleApproval(toolCalls, toolExecutor)
 
 			// 执行工具
 			for _, toolCall := range toolCalls {

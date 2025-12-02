@@ -93,7 +93,8 @@ func BuildSystemPrompt(env environment.SystemEnvironment, sm *state.Manager) str
 	prompt.WriteString("\n## 注意事项\n\n")
 	prompt.WriteString("- 命令自动在当前控制机执行，无需手动指定\n")
 	prompt.WriteString("- 控制机列表已在上方显示，无需调用工具查询\n")
-	prompt.WriteString("- 使用系统对应的命令（Windows用dir，Linux用ls）\n")
+	prompt.WriteString("- **查看目录内容优先用 run_command('ls')，不要用 list_directory（会很慢）**\n")
+	prompt.WriteString("- list_directory 仅用于分析特定项目目录，禁止在根目录或大目录使用\n")
 
 	return prompt.String()
 }

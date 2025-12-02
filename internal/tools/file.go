@@ -133,13 +133,56 @@ func formatFileSize(size int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(size)/float64(div), "KMGTPE"[exp])
 }
 
-// ExecuteEditFile 编辑文件
-func ExecuteEditFile(toolCallID string, args map[string]interface{}, bm *backup.Manager) string {
+// ExecuteEditFile 编辑文件（支持远程）
+func ExecuteEditFile(toolCallID string, args map[string]interface{}, bm *backup.Manager, sm *state.Manager) string {
 	file := args["file"].(string)
 	old := args["old"].(string)
 	new := args["new"].(string)
+	currentMachine := sm.GetCurrentMachineID()
 
-	// 读取原内容（用于备份）
+	// 远程机器：先读取备份，然后用sed编辑
+	if currentMachine != "local" {
+		// 1. 先读取原文件内容（用于备份）
+		readCmd := fmt.Sprintf("cat '%s' | base64 2>/dev/null", file)
+		b64Content, err := sm.ExecuteOnAgent(currentMachine, readCmd)
+		if err != nil {
+			return fmt.Sprintf("[✗] 读取文件失败: %v", err)
+		}
+
+		oldContent, err := base64.StdEncoding.DecodeString(strings.TrimSpace(b64Content))
+		if err != nil {
+			return fmt.Sprintf("[✗] 解码文件失败: %v", err)
+		}
+
+		// 2. 检查匹配数量
+		text := string(oldContent)
+		count := strings.Count(text, old)
+
+		if count == 0 {
+			return "[✗] 未找到要替换的内容"
+		}
+		if count > 1 {
+			return fmt.Sprintf("[✗] 找到%d处匹配，无法确定唯一位置", count)
+		}
+
+		// 3. 执行替换（在Go中完成，确保一致性）
+		newText := strings.Replace(text, old, new, 1)
+
+		// 4. 写回远程文件（使用base64避免特殊字符问题）
+		newB64 := base64.StdEncoding.EncodeToString([]byte(newText))
+		writeCmd := fmt.Sprintf("echo '%s' | base64 -d > '%s'", newB64, file)
+		_, err = sm.ExecuteOnAgent(currentMachine, writeCmd)
+		if err != nil {
+			return fmt.Sprintf("[✗] 写入失败: %v", err)
+		}
+
+		// 5. 保存备份（和本地一样）
+		bm.AddBackup(toolCallID, "edit", file+"@"+currentMachine, oldContent)
+
+		return fmt.Sprintf("[✓] 文件已修改: %s (机器: %s, 等待用户确认)", file, currentMachine)
+	}
+
+	// 本地机器：原逻辑
 	oldContent, err := os.ReadFile(file)
 	if err != nil {
 		return fmt.Sprintf("[✗] 读取文件失败: %v", err)

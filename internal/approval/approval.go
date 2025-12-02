@@ -55,7 +55,7 @@ func isCommandInList(command string, list []string) bool {
 }
 
 // HandleApproval 处理工具调用批准
-func HandleApproval(toolCalls []openai.ToolCall) map[string]bool {
+func HandleApproval(toolCalls []openai.ToolCall, executor *tools.ExecutorSimplified) map[string]bool {
 	// 分类工具调用
 	var immediateApprovalOps []openai.ToolCall // 需要立即批准的
 	var autoApprovalOps []openai.ToolCall      // 自动批准的
@@ -82,7 +82,7 @@ func HandleApproval(toolCalls []openai.ToolCall) map[string]bool {
 			} else {
 				immediateApprovalOps = append(immediateApprovalOps, tc)
 			}
-		} else if tools.NeedsImmediateApproval(tc.Function.Name) {
+		} else if executor.NeedsImmediateApproval(tc) {
 			immediateApprovalOps = append(immediateApprovalOps, tc)
 		} else {
 			autoApprovalOps = append(autoApprovalOps, tc)

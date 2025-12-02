@@ -195,6 +195,7 @@ func setupConfig() error {
 	config.BaseURL = "https://api.deepseek.com/v1"
 	config.InterruptKey = "n"
 	config.EnableInterrupt = true
+	// AgentAPIKey 使用硬编码默认值，不需要用户配置
 
 	// 保存配置
 	GlobalConfig = config
@@ -225,6 +226,11 @@ func loadConfig() error {
 	// 验证必填项
 	if GlobalConfig.APIKey == "" || GlobalConfig.APIKey == "your-api-key-here" {
 		return fmt.Errorf("请在配置文件中设置有效的 API Key: %s", ConfigFile)
+	}
+
+	// 如果配置文件没有 AgentAPIKey，使用硬编码默认值
+	if GlobalConfig.AgentAPIKey == "" {
+		GlobalConfig.AgentAPIKey = "JARVIS_GLOBAL_SECRET_KEY_2024"
 	}
 
 	return nil

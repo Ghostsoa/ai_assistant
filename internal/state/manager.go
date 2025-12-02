@@ -74,6 +74,7 @@ func NewManager() *Manager {
 	}
 
 	// 初始化双slot终端（默认只激活slot1-本地）
+	needsSave := false
 	if len(m.state.TerminalSlots) == 0 {
 		m.state.TerminalSlots["slot1"] = &TerminalSlot{
 			MachineID: "local",
@@ -85,6 +86,7 @@ func NewManager() *Manager {
 			Active:    false,
 			Buffer:    []string{},
 		}
+		needsSave = true
 	}
 
 	// 确保Buffer已初始化
@@ -92,6 +94,11 @@ func NewManager() *Manager {
 		if slot.Buffer == nil {
 			slot.Buffer = []string{}
 		}
+	}
+
+	// 如果初始化了新字段，立即保存
+	if needsSave {
+		m.Save()
 	}
 
 	return m
@@ -110,6 +117,15 @@ func (m *Manager) load() {
 	}
 
 	m.state = &state
+
+	// 确保map已初始化（兼容旧版本state.json）
+	if m.state.Machines == nil {
+		m.state.Machines = make(map[string]*Machine)
+	}
+	if m.state.TerminalSlots == nil {
+		m.state.TerminalSlots = make(map[string]*TerminalSlot)
+	}
+
 	// 初始化运行时字段
 	for _, machine := range m.state.Machines {
 		if machine.CurrentDir == "" {

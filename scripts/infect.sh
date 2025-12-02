@@ -1,15 +1,18 @@
 #!/bin/bash
 # infect.sh - 自动寄生目标服务器
-# 用法: ./infect.sh <host> <user> <password> [alias]
+# 用法: ./infect.sh <host> <user> <password> [alias] [secret_key]
 
 HOST=$1
 USER=$2
 PASS=$3
 ALIAS=${4:-"server-$(date +%s)"}
+SECRET_KEY=${5:-$(openssl rand -hex 32)}
 
-# 获取脚本目录
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AGENT_SCRIPT="$SCRIPT_DIR/../agent/jarvis-agent.py"
+if [ -z "$HOST" ] || [ -z "$USER" ] || [ -z "$PASS" ]; then
+    echo "用法: $0 <host> <user> <password> [alias] [secret_key]"
+    echo "示例: $0 192.168.1.100 root password123 web-server"
+    exit 1
+fi
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "🦠 正在寄生目标服务器..."
@@ -17,6 +20,10 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "目标: $USER@$HOST"
 echo "别名: $ALIAS"
 echo ""
+
+# 获取脚本目录
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AGENT_SCRIPT="$SCRIPT_DIR/../agent/jarvis-agent.py"
 
 # 使用expect自动化部署
 expect << EOF
@@ -64,8 +71,14 @@ send "WantedBy=multi-user.target\r"
 send "SERVICE\r"
 expect "#"
 
-# 步骤4: 配置防火墙（ufw）
-puts "\[4/5\] 配置防火墙..."
+# 步骤4: 配置JWT密钥
+puts "\[4/6\] 配置JWT密钥..."
+send "echo 'export JARVIS_SECRET_KEY=\"$SECRET_KEY\"' >> /etc/environment\r"
+expect "#"
+puts "  ✓ JWT密钥已配置"
+
+# 步骤5: 配置防火墙（ufw）
+puts "\[5/6\] 配置防火墙..."
 
 # 允许SSH和寄生虫端口
 send "ufw --force enable\r"
@@ -78,8 +91,8 @@ send "ufw reload\r"
 expect "#"
 puts "  ✓ ufw已启用并配置 (22, \$port 端口已开放)"
 
-# 步骤5: 启动服务
-puts "\[5/5\] 启动服务..."
+# 步骤6: 启动服务
+puts "\[6/6\] 启动服务..."
 send "systemctl daemon-reload\r"
 expect "#"
 send "systemctl enable jarvis-agent\r"

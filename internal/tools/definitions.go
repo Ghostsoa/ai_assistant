@@ -10,7 +10,7 @@ func GetToolsSimplified() []openai.Tool {
 			Type: openai.ToolTypeFunction,
 			Function: &openai.FunctionDefinition{
 				Name:        "file_operation",
-				Description: "统一的文件操作工具。支持：read(读取)、edit(编辑)、rename(重命名符号)、delete(删除)、search(搜索代码)。",
+				Description: "统一的文件操作工具。支持：read(读取)、edit(编辑)、rename(重命名符号)、delete(删除)、search(搜索代码)。不指定machine则在slot1机器执行。",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -22,6 +22,10 @@ func GetToolsSimplified() []openai.Tool {
 						"file": map[string]interface{}{
 							"type":        "string",
 							"description": "文件路径（所有操作都需要）",
+						},
+						"machine": map[string]interface{}{
+							"type":        "string",
+							"description": "机器ID（可选，不填则使用slot1的机器）",
 						},
 						// read 专用
 						"start_line": map[string]interface{}{
@@ -74,18 +78,17 @@ func GetToolsSimplified() []openai.Tool {
 			Type: openai.ToolTypeFunction,
 			Function: &openai.FunctionDefinition{
 				Name:        "run_command",
-				Description: "在持久Shell中执行命令（保持工作目录和环境变量）。自动路由到当前控制机。白名单命令自动批准，其他需用户批准。",
+				Description: "执行Shell命令（持久Shell）。不指定machine则在slot1机器执行，可指定任意机器ID直接执行。",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"command": map[string]interface{}{
 							"type":        "string",
-							"description": "要执行的命令",
+							"description": "要执行的Shell命令",
 						},
-						"interactive": map[string]interface{}{
-							"type":        "boolean",
-							"description": "是否交互式运行（通常为false）",
-							"default":     false,
+						"machine": map[string]interface{}{
+							"type":        "string",
+							"description": "机器ID（可选，不填则使用slot1的机器）",
 						},
 					},
 					"required": []string{"command"},
@@ -93,26 +96,7 @@ func GetToolsSimplified() []openai.Tool {
 			},
 		},
 
-		// 3. 机器切换工具
-		{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        "switch_machine",
-				Description: "切换当前控制机。命令执行会自动路由到当前控制机。可用控制机列表已在系统提示词中显示。",
-				Parameters: map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"machine_id": map[string]interface{}{
-							"type":        "string",
-							"description": "机器ID",
-						},
-					},
-					"required": []string{"machine_id"},
-				},
-			},
-		},
-
-		// 4. 网络搜索工具
+		// 3. 网络搜索工具
 		{
 			Type: openai.ToolTypeFunction,
 			Function: &openai.FunctionDefinition{
@@ -132,6 +116,73 @@ func GetToolsSimplified() []openai.Tool {
 						},
 					},
 					"required": []string{"query"},
+				},
+			},
+		},
+
+		// 5. 文件同步工具（统一）
+		{
+			Type: openai.ToolTypeFunction,
+			Function: &openai.FunctionDefinition{
+				Name:        "sync",
+				Description: "文件同步工具。支持：push(推送文件)、pull(拉取文件)、status(查询任务状态)。5秒内完成直接返回，超过5秒后台运行。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"action": map[string]interface{}{
+							"type":        "string",
+							"description": "操作类型：push/pull/status",
+							"enum":        []string{"push", "pull", "status"},
+						},
+						// push/pull 参数
+						"local": map[string]interface{}{
+							"type":        "string",
+							"description": "本地文件路径（push/pull时必需）",
+						},
+						"remote": map[string]interface{}{
+							"type":        "string",
+							"description": "远程文件路径（push/pull时必需）",
+						},
+						"machine": map[string]interface{}{
+							"type":        "string",
+							"description": "远程机器ID（push/pull时必需）",
+						},
+						// status 参数
+						"task_id": map[string]interface{}{
+							"type":        "string",
+							"description": "任务ID（status时必需）",
+						},
+					},
+					"required": []string{"action"},
+				},
+			},
+		},
+
+		// 6. 终端管理工具
+		{
+			Type: openai.ToolTypeFunction,
+			Function: &openai.FunctionDefinition{
+				Name:        "terminal_manage",
+				Description: "管理终端槽位。支持：open(打开slot2)、close(关闭slot2)、switch(切换slot到另一台机器)、status(查看终端状态)。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"action": map[string]interface{}{
+							"type":        "string",
+							"description": "操作类型",
+							"enum":        []string{"open", "close", "switch", "status"},
+						},
+						"slot": map[string]interface{}{
+							"type":        "string",
+							"description": "槽位ID：slot1或slot2（open/close/switch时必需）",
+							"enum":        []string{"slot1", "slot2"},
+						},
+						"machine": map[string]interface{}{
+							"type":        "string",
+							"description": "机器ID（open/switch时必需）",
+						},
+					},
+					"required": []string{"action"},
 				},
 			},
 		},

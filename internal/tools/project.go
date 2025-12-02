@@ -17,12 +17,24 @@ func ExecuteListDirectory(args map[string]interface{}, sm *state.Manager) string
 		path = p
 	}
 
-	currentMachine := sm.GetCurrentMachineID()
+	// 获取目标机器（由executor注入或使用slot1）
+	var targetMachine string
+	if machineID, ok := args["_target_machine"].(string); ok && machineID != "" {
+		targetMachine = machineID
+	} else {
+		// 使用slot1的机器
+		slot1Machine := sm.GetSlot1Machine()
+		if slot1Machine != nil {
+			targetMachine = slot1Machine.ID
+		} else {
+			targetMachine = "local"
+		}
+	}
 
 	// 远程机器：直接使用ls命令
-	if currentMachine != "local" {
+	if targetMachine != "local" {
 		cmd := fmt.Sprintf("ls -lah '%s' 2>&1 || echo '[目录不存在]'", path)
-		output, err := sm.ExecuteOnAgent(currentMachine, cmd)
+		output, err := sm.ExecuteOnAgent(targetMachine, cmd)
 		if err != nil {
 			return fmt.Sprintf("[✗] 列出目录失败: %v", err)
 		}
@@ -31,7 +43,7 @@ func ExecuteListDirectory(args map[string]interface{}, sm *state.Manager) string
 			return fmt.Sprintf("[✗] 目录不存在: %s", path)
 		}
 
-		return fmt.Sprintf("[目录] %s (机器: %s):\n```\n%s```", path, currentMachine, output)
+		return fmt.Sprintf("[目录] %s (机器: %s):\n```\n%s```", path, targetMachine, output)
 	}
 
 	// 本地机器：原逻辑
@@ -118,86 +130,7 @@ func ExecuteListDirectory(args map[string]interface{}, sm *state.Manager) string
 		formatSize(totalSize))
 }
 
-// ExecuteGetProjectStructure 获取项目树结构
-func ExecuteGetProjectStructure(args map[string]interface{}) string {
-	maxDepth := 3
-	if md, ok := args["max_depth"].(float64); ok {
-		maxDepth = int(md)
-	}
-
-	var result strings.Builder
-	result.WriteString("[项目] 结构:\n```\n")
-
-	var walk func(path string, depth int, prefix string)
-	walk = func(path string, depth int, prefix string) {
-		if depth > maxDepth {
-			return
-		}
-
-		entries, err := os.ReadDir(path)
-		if err != nil {
-			return
-		}
-
-		for i, entry := range entries {
-			// 跳过隐藏文件和常见忽略目录
-			if strings.HasPrefix(entry.Name(), ".") ||
-				entry.Name() == "node_modules" ||
-				entry.Name() == "vendor" {
-				continue
-			}
-
-			isLast := i == len(entries)-1
-			connector := "├── "
-			if isLast {
-				connector = "└── "
-			}
-
-			result.WriteString(prefix + connector + entry.Name())
-
-			if entry.IsDir() {
-				result.WriteString("/\n")
-				newPrefix := prefix
-				if isLast {
-					newPrefix += "    "
-				} else {
-					newPrefix += "│   "
-				}
-				walk(path+"/"+entry.Name(), depth+1, newPrefix)
-			} else {
-				result.WriteString("\n")
-			}
-		}
-	}
-
-	walk(".", 0, "")
-	result.WriteString("```")
-
-	return result.String()
-}
-
-// ExecuteGetFileStats 获取文件统计
-func ExecuteGetFileStats(args map[string]interface{}) string {
-	file := args["file"].(string)
-
-	info, err := os.Stat(file)
-	if err != nil {
-		return fmt.Sprintf("[✗] 获取文件信息失败: %v", err)
-	}
-
-	lineCount := countLines(file)
-
-	return fmt.Sprintf("[统计] 文件统计: %s\n"+
-		"- 大小: %s\n"+
-		"- 行数: %d\n"+
-		"- 修改时间: %s",
-		file,
-		formatSize(info.Size()),
-		lineCount,
-		info.ModTime().Format("2006-01-02 15:04:05"))
-}
-
-// 辅助函数
+// 辅助函数（本地 ExecuteListDirectory 使用）
 func countLines(file string) int {
 	content, err := os.ReadFile(file)
 	if err != nil {
@@ -218,3 +151,7 @@ func formatSize(size int64) string {
 	}
 	return fmt.Sprintf("%.1f %cB", float64(size)/float64(div), "KMGTPE"[exp])
 }
+
+// 以下函数已删除，使用 run_command 替代：
+// - ExecuteGetProjectStructure -> run_command("tree" 或 "find . -type f")
+// - ExecuteGetFileStats -> run_command("wc -l file" 和 "ls -lh file")

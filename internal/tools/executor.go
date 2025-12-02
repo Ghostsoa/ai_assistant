@@ -37,21 +37,40 @@ func (e *ExecutorSimplified) Execute(toolCall openai.ToolCall) string {
 		return e.executeFileOperation(toolCall.ID, args)
 	case "run_command":
 		return ExecuteRunCommand(args, e.ProcessManager, e.StateManager)
-	case "switch_machine":
-		return ExecuteSwitchMachine(args, e.StateManager)
 	case "web_search":
 		return ExecuteWebSearch(args)
+	case "sync":
+		return ExecuteSync(args, e.StateManager)
+	case "terminal_manage":
+		return ExecuteTerminalManage(args, e.StateManager)
 	default:
 		return fmt.Sprintf("[✗] 未知工具: %s", toolCall.Function.Name)
 	}
 }
 
-// executeFileOperation 执行文件操作（统一入口）
+// executeFileOperation 执行文件操作（统一入口，支持machine参数）
 func (e *ExecutorSimplified) executeFileOperation(toolCallID string, args map[string]interface{}) string {
 	action, ok := args["action"].(string)
 	if !ok {
 		return "[✗] 缺少action参数"
 	}
+
+	// 确定目标机器
+	var targetMachine string
+	if machineID, ok := args["machine"].(string); ok && machineID != "" {
+		targetMachine = machineID
+	} else {
+		// 使用slot1的机器
+		slot1Machine := e.StateManager.GetSlot1Machine()
+		if slot1Machine != nil {
+			targetMachine = slot1Machine.ID
+		} else {
+			targetMachine = "local"
+		}
+	}
+
+	// 将targetMachine注入到args中供后续函数使用
+	args["_target_machine"] = targetMachine
 
 	switch action {
 	case "read":

@@ -16,29 +16,47 @@ import (
 	"ai_assistant/internal/state"
 )
 
-// ExecuteReadFile 读取文件（支持远程）
+// 文件读取限制
+const (
+	MaxFileSize  = 10 * 1024 * 1024 // 10MB
+	MaxReadLines = 1000             // 最多读取1000行
+)
+
+// ExecuteReadFile 读取文件（支持远程，带大小限制）
 func ExecuteReadFile(args map[string]interface{}, sm *state.Manager) string {
 	file := args["file"].(string)
-	currentMachine := sm.GetCurrentMachineID()
+
+	// 获取目标机器（由executor注入）
+	targetMachine, _ := args["_target_machine"].(string)
+	if targetMachine == "" {
+		targetMachine = "local"
+	}
 
 	// 远程机器：通过寄生虫读取
-	if currentMachine != "local" {
+	if targetMachine != "local" {
 		// 使用base64编码传输，避免特殊字符问题
-		cmd := fmt.Sprintf("cat '%s' | base64", file)
-		output, err := sm.ExecuteOnAgent(currentMachine, cmd)
+		cmd := fmt.Sprintf("cat '%s' 2>/dev/null | base64 -w 0 || base64 < '%s'", file, file)
+		output, err := sm.ExecuteOnAgent(targetMachine, cmd)
 		if err != nil {
 			return fmt.Sprintf("[✗] 读取失败: %v", err)
 		}
 
+		// 清理所有空白字符
+		output = strings.ReplaceAll(output, "\n", "")
+		output = strings.ReplaceAll(output, "\r", "")
+		output = strings.ReplaceAll(output, " ", "")
+		output = strings.TrimSpace(output)
+
 		// 解码base64
-		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(output))
+		decoded, err := base64.StdEncoding.DecodeString(output)
 		if err != nil {
 			// 如果解码失败，尝试直接读取
-			output, err = sm.ExecuteOnAgent(currentMachine, fmt.Sprintf("cat '%s'", file))
-			if err != nil {
-				return fmt.Sprintf("[✗] 读取失败: %v", err)
+			directCmd := fmt.Sprintf("cat '%s' 2>/dev/null", file)
+			directOutput, err2 := sm.ExecuteOnAgent(targetMachine, directCmd)
+			if err2 != nil {
+				return fmt.Sprintf("[✗] 读取失败: base64解码错误(%v), 直接读取也失败(%v)", err, err2)
 			}
-			content := []byte(output)
+			content := []byte(directOutput)
 			return processFileContent(file, content, args)
 		}
 		return processFileContent(file, decoded, args)
@@ -52,12 +70,41 @@ func ExecuteReadFile(args map[string]interface{}, sm *state.Manager) string {
 	return processFileContent(file, content, args)
 }
 
-// processFileContent 处理文件内容（提取公共逻辑）
+// hasLineRange 检查是否指定了行号范围
+func hasLineRange(args map[string]interface{}) bool {
+	_, hasStart := args["start_line"]
+	_, hasEnd := args["end_line"]
+	return hasStart || hasEnd
+}
+
+// processFileContent 处理文件内容（提取公共逻辑，带大小检查）
 func processFileContent(file string, content []byte, args map[string]interface{}) string {
+	// 检查文件大小
+	fileSize := int64(len(content))
+	if fileSize > MaxFileSize {
+		return fmt.Sprintf("[✗] 文件过大: %s (%.2f MB)\n"+
+			"限制: 10 MB\n"+
+			"提示: 请使用 run_command('head -n 100 %s') 查看部分内容",
+			file,
+			float64(fileSize)/(1024*1024),
+			file)
+	}
 
 	// 分割成行
 	lines := strings.Split(string(content), "\n")
 	totalLines := len(lines)
+
+	// 检查行数限制
+	if totalLines > MaxReadLines && !hasLineRange(args) {
+		return fmt.Sprintf("[✗] 文件行数过多: %s (%d 行)\n"+
+			"限制: %d 行\n"+
+			"提示: 使用 start_line 和 end_line 参数分段读取\n"+
+			"示例: {\"file\": \"%s\", \"start_line\": 1, \"end_line\": 100}",
+			file,
+			totalLines,
+			MaxReadLines,
+			file)
+	}
 
 	// 获取可选的行号范围参数
 	var startLine, endLine int
@@ -138,20 +185,43 @@ func ExecuteEditFile(toolCallID string, args map[string]interface{}, bm *backup.
 	file := args["file"].(string)
 	old := args["old"].(string)
 	new := args["new"].(string)
-	currentMachine := sm.GetCurrentMachineID()
+
+	// 获取目标机器（由executor注入）
+	targetMachine, _ := args["_target_machine"].(string)
+	if targetMachine == "" {
+		targetMachine = "local"
+	}
 
 	// 远程机器：先读取备份，然后用sed编辑
-	if currentMachine != "local" {
+	if targetMachine != "local" {
 		// 1. 先读取原文件内容（用于备份）
-		readCmd := fmt.Sprintf("cat '%s' | base64 2>/dev/null", file)
-		b64Content, err := sm.ExecuteOnAgent(currentMachine, readCmd)
+		// 使用 base64 -w 0 确保输出没有换行符
+		readCmd := fmt.Sprintf("cat '%s' 2>/dev/null | base64 -w 0 || base64 < '%s'", file, file)
+		b64Content, err := sm.ExecuteOnAgent(targetMachine, readCmd)
 		if err != nil {
 			return fmt.Sprintf("[✗] 读取文件失败: %v", err)
 		}
 
-		oldContent, err := base64.StdEncoding.DecodeString(strings.TrimSpace(b64Content))
+		// 清理所有空白字符（换行、空格等）
+		b64Content = strings.ReplaceAll(b64Content, "\n", "")
+		b64Content = strings.ReplaceAll(b64Content, "\r", "")
+		b64Content = strings.ReplaceAll(b64Content, " ", "")
+		b64Content = strings.TrimSpace(b64Content)
+
+		// 验证是否为有效的base64
+		if b64Content == "" {
+			return fmt.Sprintf("[✗] 文件为空或读取失败: %s", file)
+		}
+
+		oldContent, err := base64.StdEncoding.DecodeString(b64Content)
 		if err != nil {
-			return fmt.Sprintf("[✗] 解码文件失败: %v", err)
+			// 如果base64解码失败，尝试直接读取
+			directCmd := fmt.Sprintf("cat '%s' 2>/dev/null", file)
+			directContent, err2 := sm.ExecuteOnAgent(targetMachine, directCmd)
+			if err2 != nil {
+				return fmt.Sprintf("[✗] 读取文件失败: base64解码错误(%v), 直接读取也失败(%v)", err, err2)
+			}
+			oldContent = []byte(directContent)
 		}
 
 		// 2. 检查匹配数量
@@ -171,15 +241,15 @@ func ExecuteEditFile(toolCallID string, args map[string]interface{}, bm *backup.
 		// 4. 写回远程文件（使用base64避免特殊字符问题）
 		newB64 := base64.StdEncoding.EncodeToString([]byte(newText))
 		writeCmd := fmt.Sprintf("echo '%s' | base64 -d > '%s'", newB64, file)
-		_, err = sm.ExecuteOnAgent(currentMachine, writeCmd)
+		_, err = sm.ExecuteOnAgent(targetMachine, writeCmd)
 		if err != nil {
 			return fmt.Sprintf("[✗] 写入失败: %v", err)
 		}
 
 		// 5. 保存备份（和本地一样）
-		bm.AddBackup(toolCallID, "edit", file+"@"+currentMachine, oldContent)
+		bm.AddBackup(toolCallID, "edit", file+"@"+targetMachine, oldContent)
 
-		return fmt.Sprintf("[✓] 文件已修改: %s (机器: %s, 等待用户确认)", file, currentMachine)
+		return fmt.Sprintf("[✓] 文件已修改: %s (机器: %s, 等待用户确认)", file, targetMachine)
 	}
 
 	// 本地机器：原逻辑
@@ -282,22 +352,32 @@ func ExecuteRenameSymbol(toolCallID string, args map[string]interface{}, bm *bac
 	return result
 }
 
-// ExecuteDeleteFile 删除文件
+// ExecuteDeleteFile 删除文件（支持远程）
 func ExecuteDeleteFile(toolCallID string, args map[string]interface{}, bm *backup.Manager) string {
 	file := args["file"].(string)
 
-	// 备份原文件
+	// 获取目标机器（由executor注入）
+	targetMachine, _ := args["_target_machine"].(string)
+	if targetMachine == "" {
+		targetMachine = "local"
+	}
+
+	// 远程删除
+	if targetMachine != "local" {
+		// 远程删除不支持备份恢复（太复杂），直接提示用户
+		return fmt.Sprintf("[✗] 远程删除暂不支持，请使用 run_command: rm '%s' (机器: %s)", file, targetMachine)
+	}
+
+	// 本地删除（带备份）
 	oldContent, err := os.ReadFile(file)
 	if err != nil {
 		return fmt.Sprintf("[✗] 读取文件失败: %v", err)
 	}
 
-	// 删除文件
 	if err := os.Remove(file); err != nil {
 		return fmt.Sprintf("[✗] 删除失败: %v", err)
 	}
 
-	// 保存备份
 	bm.AddBackup(toolCallID, "delete", file, oldContent)
 
 	return fmt.Sprintf("[✓] 文件已删除: %s（等待用户确认）", file)

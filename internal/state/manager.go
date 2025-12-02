@@ -324,11 +324,8 @@ func (m *Manager) AppendTerminalOutput(machineID, command, output string) {
 
 // buildPrompt 构建终端提示符
 func buildPrompt(machine *Machine) string {
-	// 使用机器的Description作为显示名称
-	machineName := machine.Description
-	if machineName == "" {
-		machineName = machine.ID
-	}
+	// 使用机器的ID作为主机名（与sync工具的machine_id一致）
+	machineName := machine.ID
 
 	// 获取当前目录（简化显示，~代表home）
 	dir := machine.CurrentDir

@@ -245,12 +245,7 @@ func (m *Manager) GetTerminalStatus() string {
 		}
 
 		if slot.Active {
-			machine := m.state.Machines[slot.MachineID]
-			desc := slot.MachineID
-			if machine != nil {
-				desc = machine.Description
-			}
-			result += fmt.Sprintf("%s: [%s] ● 激活\n", slotID, desc)
+			result += fmt.Sprintf("%s: [%s] ● 激活\n", slotID, slot.MachineID)
 		} else {
 			result += fmt.Sprintf("%s: ○ 未激活\n", slotID)
 		}
@@ -369,12 +364,8 @@ func (m *Manager) GetTerminalSnapshot() string {
 	slot1 := m.state.TerminalSlots["slot1"]
 	if slot1 != nil && slot1.Active {
 		machine := m.state.Machines[slot1.MachineID]
-		machineDesc := slot1.MachineID
-		if machine != nil {
-			machineDesc = machine.Description
-		}
 
-		result += fmt.Sprintf("### Slot 1: [%s] ●\n", machineDesc)
+		result += fmt.Sprintf("### Slot 1: [%s] ●\n", slot1.MachineID)
 		if len(slot1.Buffer) == 0 {
 			result += "[终端为空]\n\n"
 		} else {
@@ -395,12 +386,8 @@ func (m *Manager) GetTerminalSnapshot() string {
 	slot2 := m.state.TerminalSlots["slot2"]
 	if slot2 != nil && slot2.Active {
 		machine := m.state.Machines[slot2.MachineID]
-		machineDesc := slot2.MachineID
-		if machine != nil {
-			machineDesc = machine.Description
-		}
 
-		result += fmt.Sprintf("### Slot 2: [%s]\n", machineDesc)
+		result += fmt.Sprintf("### Slot 2: [%s]\n", slot2.MachineID)
 		if len(slot2.Buffer) == 0 {
 			result += "[终端为空]\n\n"
 		} else {

@@ -54,7 +54,7 @@ func openTerminalSlot(slotID, machineID string, sm *state.Manager) string {
 		return fmt.Sprintf("[✗] 打开槽位失败: %v", err)
 	}
 
-	return fmt.Sprintf("[✓] Slot2 已打开: %s (%s)", machineID, machine.Description)
+	return fmt.Sprintf("[✓] Slot2 已打开: %s", machineID)
 }
 
 // closeTerminalSlot 关闭终端槽位
@@ -88,7 +88,7 @@ func switchTerminalSlot(slotID, machineID string, sm *state.Manager) string {
 		return fmt.Sprintf("[✗] 切换失败: %v", err)
 	}
 
-	return fmt.Sprintf("[✓] %s 已切换到: %s (%s)", slotID, machineID, machine.Description)
+	return fmt.Sprintf("[✓] %s 已切换到: %s", slotID, machineID)
 }
 
 // getTerminalStatus 获取终端状态
